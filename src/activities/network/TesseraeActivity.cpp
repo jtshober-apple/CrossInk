@@ -20,6 +20,7 @@ static uint32_t millis() {
 #include "network/TesseraeClient.h"
 #include "WifiSelectionActivity.h"
 #include "components/TouchHeaderBackButton.h"
+#include "activities/util/KeyboardEntryActivity.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
 
@@ -87,7 +88,13 @@ void TesseraeActivity::loop() {
       break;
 
     case State::DISCOVERING:
+      // Let the "Registering device..." screen reach the panel before the blocking network call.
+      if (!drawn_) break;
       runDiscover();
+      break;
+
+    case State::ENTER_URL:
+      // Handled by KeyboardEntryActivity sub-flow; nothing to do here.
       break;
 
     case State::AWAITING_APPROVAL: {
@@ -104,6 +111,7 @@ void TesseraeActivity::loop() {
     }
 
     case State::FETCHING_FRAME:
+      if (!drawn_) break;
       runFetchFrame();
       break;
 
@@ -139,7 +147,12 @@ void TesseraeActivity::render(RenderLock&&) {
     GUI.drawHeader(renderer, header, tr(STR_TESSERAE));
   }
 
+  drawn_ = true;
+
   switch (state_) {
+    case State::ENTER_URL:
+      break;
+
     case State::WIFI_SELECTION:
       // WifiSelectionActivity is rendered as a separate overlay; nothing here.
       break;
@@ -172,13 +185,13 @@ void TesseraeActivity::render(RenderLock&&) {
 
 void TesseraeActivity::setState(State state) {
   state_ = state;
+  drawn_ = false;
   requestUpdate();
 }
 
 void TesseraeActivity::runDiscover() {
   if (SETTINGS.tessServerUrl[0] == '\0') {
-    errorMessage_ = tr(STR_TESSERAE_NOT_CONFIGURED);
-    setState(State::ERROR);
+    promptForUrl();
     return;
   }
 
@@ -210,6 +223,23 @@ void TesseraeActivity::runDiscover() {
       setState(State::ERROR);
       break;
   }
+}
+
+void TesseraeActivity::promptForUrl() {
+  setState(State::ENTER_URL);
+  startActivityForResult(
+      std::make_unique<KeyboardEntryActivity>(renderer, mappedInput, tr(STR_TESSERAE_SERVER_URL), "https://",
+                                              sizeof(SETTINGS.tessServerUrl) - 1, InputType::Url),
+      [this](const ActivityResult& result) {
+        const auto* kb = result.isCancelled ? nullptr : std::get_if<KeyboardResult>(&result.data);
+        if (kb == nullptr || kb->text.empty() || kb->text == "https://") {
+          finish();
+          return;
+        }
+        strlcpy(SETTINGS.tessServerUrl, kb->text.c_str(), sizeof(SETTINGS.tessServerUrl));
+        SETTINGS.saveToFile();
+        setState(State::DISCOVERING);
+      });
 }
 
 void TesseraeActivity::runFetchFrame() {

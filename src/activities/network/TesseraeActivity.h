@@ -22,6 +22,7 @@
 class TesseraeActivity final : public Activity {
  public:
   enum class State {
+    ENTER_URL,           // keyboard sub-flow for the server URL
     WIFI_SELECTION,      // waiting for WifiSelectionActivity to return
     DISCOVERING,         // POSTing /discover
     AWAITING_APPROVAL,   // 202 — waiting for admin; user can retry
@@ -44,6 +45,7 @@ class TesseraeActivity final : public Activity {
 
  private:
   State state_ = State::WIFI_SELECTION;
+  volatile bool drawn_ = false;  // set by render(); gates blocking network states
   std::string statusMessage_;
   std::string errorMessage_;
   ScreenTransitionRefresh screenTransitionRefresh_;
@@ -53,6 +55,7 @@ class TesseraeActivity final : public Activity {
   static constexpr uint32_t APPROVAL_POLL_INTERVAL_MS = 30000;
 
   void setState(State state);
+  void promptForUrl();
   void runDiscover();
   void runFetchFrame();
   void exitViaBack();
