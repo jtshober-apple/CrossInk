@@ -22,11 +22,21 @@ class KOSyncStatusStore {
     return instance;
   }
 
-  // Record that epubPath was successfully pushed right now.
-  void markSynced(const std::string& epubPath);
+  // Record that epubPath was successfully pushed right now. pushedPosition is the reading position
+  // (spine << 16 | page) that went up; leave it at kUnknownPosition when it isn't known.
+  void markSynced(const std::string& epubPath, uint32_t pushedPosition = kUnknownPosition);
 
-  // True if epubPath has ever been successfully pushed on this device.
+  // The reader reports where it is whenever it saves progress. Memory only (no SD write per page turn).
+  void notePosition(const std::string& epubPath, uint32_t position);
+
+  // Write the last reported position to SD. Call just before deep sleep: RAM is lost, and a timed
+  // wake redraws the sleep screen from a fresh boot.
+  void persistPosition();
+
+  // True once epubPath has been pushed AND, when both positions are known, nothing was read since.
   bool isSynced(const std::string& epubPath);
+
+  static constexpr uint32_t kUnknownPosition = 0xFFFFFFFFu;
 
   static const char* getFilePath() { return "/.crosspoint/ko_sync_status.json"; }
 
@@ -40,6 +50,12 @@ class KOSyncStatusStore {
   bool loaded_ = false;
   // path → epoch-seconds of last successful push
   std::unordered_map<std::string, uint32_t> syncedAt_;
+  // path → reading position at the last successful push / at the last persisted position report
+  std::unordered_map<std::string, uint32_t> pushedPos_;
+  std::unordered_map<std::string, uint32_t> currentPos_;
+  std::string curPath_;
+  uint32_t curPos_ = kUnknownPosition;
+  uint32_t persistedCurPos_ = kUnknownPosition;
 };
 
 #define KO_SYNC_STATUS KOSyncStatusStore::getInstance()

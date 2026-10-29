@@ -76,6 +76,9 @@ class TesseraeClient {
    */
   static Error refreshBeforeSleep();
 
+  /** Make the next refreshBeforeSleep() a no-op: a timed wake has just fetched and cached the frame. */
+  static void markRefreshed();
+
  private:
   TesseraeClient() = delete;
 

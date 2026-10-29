@@ -969,5 +969,6 @@ STR_TESSERAE_ERROR_URL: "Invalid server URL. Enter the full URL, e.g. http://192
 STR_TESSERAE_ERROR_NETWORK: "Could not reach Tesserae server. Check WiFi and the server URL."
 STR_TESSERAE_ERROR_SERVER: "Tesserae server returned an error. Check server logs."
 STR_TESSERAE_ERROR_MEMORY: "Not enough memory for dashboard sync. Please retry."
+STR_TESSERAE_AUTO_REFRESH: "Dashboard Auto-Refresh (min)"
 STR_TESSERAE_CLEAR_PAIRING: "Clear Pairing"
 STR_TESSERAE_CLEAR_PAIRING_CONFIRM: "Clear Tesserae pairing and cached frame?"

@@ -25,6 +25,7 @@ class HalPowerManager {
   int normalFreq = 0;  // MHz
   bool isLowPower = false;
   bool batteryCalibrationPending = false;
+  uint32_t timedWakeSeconds_ = 0;  // 0 = no timer wake source
 
   mutable int _batteryCachedPercent = 0;  // Last read battery percentage * 10 (0-1000); callers divide by 10 (ADC/X4
                                           // path only — I2C/X3 path stores 0-100 directly)
@@ -55,6 +56,10 @@ class HalPowerManager {
   // Setup wake up GPIO and enter deep sleep
   // Should be called inside main loop() to handle the currentLockMode
   void startDeepSleep(HalGPIO& gpio) const;
+
+  // Also wake from deep sleep after this many seconds (0 = power button only). Applies to the next
+  // startDeepSleep() only through the value held here, so callers re-arm it before every sleep.
+  void setTimedWakeSeconds(uint32_t seconds) { timedWakeSeconds_ = seconds; }
 
   // Get battery percentage (range 0-100)
   uint16_t getBatteryPercentage() const;

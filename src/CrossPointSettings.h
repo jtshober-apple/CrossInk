@@ -699,6 +699,8 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   char tessDeviceId[64] = "";
   char tessDeviceToken[128] = "";
   char tessEtag[64] = "";
+  // Minutes between background wakes that refresh the Tesserae sleep screen (0 = only when going to sleep).
+  uint8_t tessAutoRefreshMin = 30;
   // Master switch for automatic reading statistics; Time Left pace remains independent.
   uint8_t trackReadingStats = 1;
 

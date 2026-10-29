@@ -85,6 +85,7 @@ inline esp_sleep_wakeup_cause_t esp_sleep_get_wakeup_cause() { return ESP_SLEEP_
 #include "CrossPointState.h"
 #include "GlobalActions.h"
 #include "KOReaderCredentialStore.h"
+#include "KOSyncStatusStore.h"
 #include "MappedInputManager.h"
 #include "OpdsServerStore.h"
 #include "RecentBooksStore.h"
@@ -106,6 +107,7 @@ inline esp_sleep_wakeup_cause_t esp_sleep_get_wakeup_cause() { return ESP_SLEEP_
 #include "components/UITheme.h"
 #include "components/icons/tablerFilledIcons.h"
 #include "fontIds.h"
+#include "network/TesseraeClient.h"
 #include "network/UsbSerialFileTransfer.h"
 #ifdef SIMULATOR
 #include <SimulatorLifecycle.h>
@@ -1084,8 +1086,21 @@ void mirrorWakeShortPressToNvs() {
 }
 
 // Enter deep sleep mode
+// Seconds until the next background Tesserae refresh while asleep (0 = don't wake on a timer).
+// Skipped when the dashboard isn't the sleep screen, the device isn't paired, or the battery is low.
+static uint32_t tesseraeTimedWakeSeconds() {
+  if (SETTINGS.sleepScreen != CrossPointSettings::SLEEP_SCREEN_MODE::TESSERAE_SLEEP) return 0;
+  if (SETTINGS.tessAutoRefreshMin == 0 || SETTINGS.tessServerUrl[0] == '\0' || SETTINGS.tessDeviceToken[0] == '\0') {
+    return 0;
+  }
+  if (powerManager.getBatteryPercentage() < 15) return 0;
+  return static_cast<uint32_t>(SETTINGS.tessAutoRefreshMin) * 60u;
+}
+
 void enterDeepSleep(bool fromTimeout) {
-  HalPowerManager::Lock powerLock;  // Ensure we are at normal CPU frequency for sleep preparation
+  HalPowerManager::Lock powerLock;
+  // The sleep screen's sync tag compares this with the last pushed position; RAM is gone after wake.
+  KO_SYNC_STATUS.persistPosition();  // Ensure we are at normal CPU frequency for sleep preparation
   APP_STATE.lastSleepFromReader = activityManager.isReaderActivity();
 
   const bool isQuickResumeSleep =
@@ -1135,6 +1150,7 @@ void enterDeepSleep(bool fromTimeout) {
   mirrorWakeShortPressToNvs();
   LOG_DBG("MAIN", "Entering deep sleep");
 
+  powerManager.setTimedWakeSeconds(tesseraeTimedWakeSeconds());
   powerManager.startDeepSleep(gpio);
 }
 
@@ -1192,6 +1208,31 @@ void setupDisplayAndFonts(const bool seamless, const bool loadReaderResources, c
   } else {
     LOG_DBG("MAIN", "Skipping EPUB scratch workspace and SD fonts for minimal network boot");
   }
+}
+
+// Woken by the sleep timer, not by a button: fetch the dashboard, redraw only if it changed, and go straight
+// back to sleep. Never returns. Deliberately leaves APP_STATE alone so the next button wake resumes exactly
+// where the reader was put to sleep.
+static void timedWakeRefreshAndResleep() {
+  LOG_INF("BOOT", "Timed wake: refreshing Tesserae dashboard");
+  const auto err = TesseraeClient::refreshBeforeSleep();
+  if (err == TesseraeClient::OK) {
+    TesseraeClient::markRefreshed();  // SleepActivity must not fetch a second time
+    setupDisplayAndFonts(/*seamless=*/true, /*loadReaderResources=*/false, /*useReaderRenderStack=*/true);
+    deepSleepInProgress = true;
+    activityManager.goToSleep(false);
+    libraryScanSleepToken.save(!library::libraryIndexNeedsRefresh());
+    Storage.shutdown();
+    putTiltSensorToSleepForDeepSleep();
+    display.deepSleep();
+  } else {
+    LOG_INF("BOOT", "Timed wake: no new frame (%s), back to sleep", TesseraeClient::errorString(err));
+    libraryScanSleepToken.save(!library::libraryIndexNeedsRefresh());
+    Storage.shutdown();
+  }
+  mirrorWakeShortPressToNvs();
+  powerManager.setTimedWakeSeconds(tesseraeTimedWakeSeconds());
+  powerManager.startDeepSleep(gpio);
 }
 
 void setup() {
@@ -1346,6 +1387,9 @@ void setup() {
   SETTINGS.loadFromFile();
   Storage.installDateTimeCallback(&SETTINGS.clockUtcOffsetQ);
   APP_STATE.loadFromFile();
+  if (rawWakeupCause == ESP_SLEEP_WAKEUP_TIMER && !isSilentReboot) {
+    timedWakeRefreshAndResleep();  // does not return
+  }
   mirrorWakeShortPressToNvs();
   // Needs SETTINGS for the clock's UTC offset, so it cannot run any earlier.
   BatteryDiagnosticLog::record(BatteryDiagnosticLog::Event::Wake, BoardConfig::ACTIVE.name,

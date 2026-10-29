@@ -342,8 +342,18 @@ TesseraeClient::Error TesseraeClient::sendHeartbeat(uint16_t* nextPollSeconds) {
 
 // ── refreshBeforeSleep ────────────────────────────────────────────────────────
 
+namespace {
+bool refreshedThisBoot = false;
+}
+
+void TesseraeClient::markRefreshed() { refreshedThisBoot = true; }
+
 TesseraeClient::Error TesseraeClient::refreshBeforeSleep() {
   if (SETTINGS.tessServerUrl[0] == '\0') return NOT_CONFIGURED;
+  if (refreshedThisBoot) {
+    refreshedThisBoot = false;
+    return OK;
+  }
 
   if (ESP.getFreeHeap() < SLEEP_MIN_FREE_HEAP || ESP.getMaxAllocHeap() < SLEEP_MIN_MAX_ALLOC_HEAP) {
     LOG_ERR(TAG, "sleep refresh: not enough heap (free=%u maxAlloc=%u), using cached frame",

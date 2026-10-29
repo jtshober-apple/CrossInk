@@ -165,6 +165,9 @@ void HalPowerManager::startDeepSleep(HalGPIO& gpio) const {
   esp_sleep_config_gpio_isolate();
   freeink::PowerManager::armPowerButtonWakeup();
   gpio_deep_sleep_hold_en();
+  if (timedWakeSeconds_ > 0) {
+    esp_sleep_enable_timer_wakeup(static_cast<uint64_t>(timedWakeSeconds_) * 1000000ULL);
+  }
   esp_deep_sleep_start();
 }
 

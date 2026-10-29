@@ -1002,6 +1002,14 @@ void SleepActivity::renderDashboardSleepScreen() const {
 }
 
 void SleepActivity::renderTesseraeSleepScreen() const {
+  // The X4 Pro/Classic skip the "Entering sleep" popup, which was fine while sleeping was instant. The refresh
+  // below takes seconds, so say what is happening instead of looking frozen.
+  if ((BoardConfig::isX4Pro() || CROSSINK_APP_DEVICE_X4CLASSIC) && SETTINGS.tessServerUrl[0] != '\0') {
+    if (APP_STATE.lastSleepFromReader) renderer.setOrientation(sleepPopupOrientation);
+    GUI.drawPopup(renderer, tr(STR_TESSERAE_SYNCING));
+    renderer.setOrientation(GfxRenderer::Orientation::Portrait);
+  }
+
   // Pull the freshest dashboard before drawing; on any failure the cached frame below is used.
   TesseraeClient::refreshBeforeSleep();
 

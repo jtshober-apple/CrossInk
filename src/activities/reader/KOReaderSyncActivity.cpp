@@ -662,7 +662,8 @@ void KOReaderSyncActivity::performUpload() {
   }
 
   // Record successful push so the sync status badge can reflect it.
-  KO_SYNC_STATUS.markSynced(epubPath);
+  KO_SYNC_STATUS.markSynced(epubPath, (static_cast<uint32_t>(std::max(0, currentSpineIndex)) << 16) |
+                                          static_cast<uint32_t>(std::max(0, currentPage)));
 
   if (autoPushMode) {
     // Upload succeeded. Go home silently without showing any UI.

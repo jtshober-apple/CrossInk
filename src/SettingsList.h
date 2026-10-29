@@ -1064,6 +1064,7 @@ inline std::vector<SettingInfo> buildSystemDeviceSettingsList(const std::vector<
   settings.push_back(SettingInfo::Action(StrId::STR_LANGUAGE, SettingAction::Language));
   settings.push_back(SettingInfo::Action(StrId::STR_KEYBOARD_LAYOUTS, SettingAction::KeyboardLayouts));
   if (halClock.isAvailable()) {
+    addSettingByName(settings, allSettings, StrId::STR_TESSERAE_AUTO_REFRESH);
     addSettingByName(settings, allSettings, StrId::STR_CLOCK_FORMAT);
     addSettingByName(settings, allSettings, StrId::STR_CLOCK_UTC_OFFSET);
     addSettingByName(settings, allSettings, StrId::STR_DATE_FORMAT);
