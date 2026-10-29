@@ -17,7 +17,7 @@ static uint32_t millis() {
 
 #include "CrossPointSettings.h"
 #include "MappedInputManager.h"
-#include "TesseraeClient.h"
+#include "network/TesseraeClient.h"
 #include "WifiSelectionActivity.h"
 #include "components/TouchHeaderBackButton.h"
 #include "components/UITheme.h"
@@ -74,8 +74,6 @@ void TesseraeActivity::onExit() {
   Activity::onExit();
 }
 
-void TesseraeActivity::onActivityResult(int /*resultCode*/, void* /*data*/) {}
-
 void TesseraeActivity::loop() {
   using MIB = MappedInputManager::Button;
 
@@ -95,7 +93,7 @@ void TesseraeActivity::loop() {
     case State::AWAITING_APPROVAL: {
       if (backPressed) { exitViaBack(); return; }
       // Retry button (front/OK on button devices).
-      if (mappedInput.wasPressed(MIB::Select)) { setState(State::DISCOVERING); return; }
+      if (mappedInput.wasPressed(MIB::Confirm)) { setState(State::DISCOVERING); return; }
       // Auto-poll every APPROVAL_POLL_INTERVAL_MS.
       const uint32_t now = millis();
       if (approvalPollMs_ == 0 || (now - approvalPollMs_) >= APPROVAL_POLL_INTERVAL_MS) {
@@ -111,13 +109,13 @@ void TesseraeActivity::loop() {
 
     case State::DONE:
       // Any press finishes the activity.
-      if (backPressed || mappedInput.wasPressed(MIB::Select)) { finish(); }
+      if (backPressed || mappedInput.wasPressed(MIB::Confirm)) { finish(); }
       break;
 
     case State::ERROR:
       if (backPressed) { exitViaBack(); return; }
       // Retry.
-      if (mappedInput.wasPressed(MIB::Select)) {
+      if (mappedInput.wasPressed(MIB::Confirm)) {
         if (SETTINGS.tessDeviceToken[0] != '\0') {
           setState(State::FETCHING_FRAME);
         } else {
@@ -128,7 +126,7 @@ void TesseraeActivity::loop() {
   }
 }
 
-void TesseraeActivity::render(RenderLock&& lock) {
+void TesseraeActivity::render(RenderLock&&) {
   const auto& metrics = UITheme::getInstance().getMetrics();
   const auto pageWidth = renderer.getScreenWidth();
 
@@ -168,7 +166,6 @@ void TesseraeActivity::render(RenderLock&& lock) {
   }
 
   renderer.displayBuffer(screenTransitionRefresh_.modeFor(static_cast<uint8_t>(state_)));
-  lock.release();
 }
 
 // ── private ───────────────────────────────────────────────────────────────────
@@ -271,14 +268,12 @@ void TesseraeActivity::renderStatus(const char* heading, const char* body, bool 
                                      body, 3, false, EpdFontFamily::REGULAR);
   }
 
-  const auto backLabel = showBack ? mappedInput.withBackArrow(tr(STR_BACK)) : std::string{};
-  const auto retryLabel = showRetry ? tr(STR_TESSERAE_SYNC_NOW) : std::string{};
-  if (mappedInput.hasTouchHardware()) {
-    // Back is in the touch header; no button hints needed.
-  } else {
-    const auto labels = mappedInput.mapLabels(backLabel, retryLabel, "", "");
+  if (!mappedInput.hasTouchHardware()) {
+    // On touch devices Back lives in the header; only button devices need hints.
+    const auto labels = mappedInput.mapLabels(showBack ? mappedInput.withBackArrow(tr(STR_BACK)) : MappedInputManager::Label{},
+                                              showRetry ? MappedInputManager::Label{tr(STR_TESSERAE_SYNC_NOW)}
+                                                        : MappedInputManager::Label{},
+                                              "", "");
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
   }
-  (void)showBack;
-  (void)showRetry;
 }

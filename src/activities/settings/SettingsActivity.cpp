@@ -28,7 +28,7 @@
 #endif
 #include "FrontlightTimePickerActivity.h"
 #include "KOReaderSettingsActivity.h"
-#include "TesseraeActivity.h"
+#include "activities/network/TesseraeActivity.h"
 #include "KeyboardLayoutsActivity.h"
 #include "MappedInputManager.h"
 #include "OpdsServerListActivity.h"

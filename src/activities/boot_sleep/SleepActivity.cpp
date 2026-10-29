@@ -1,7 +1,7 @@
 #include "SleepActivity.h"
 
 #include <BitmapHelpers.h>
-#include "TesseraeClient.h"
+#include "network/TesseraeClient.h"
 #include <BoardConfig.h>
 #include <Epub.h>
 #include <FsHelpers.h>
@@ -999,13 +999,13 @@ void SleepActivity::renderTesseraeSleepScreen() const {
   if (Storage.openFileForRead("SLP", TesseraeClient::TESSERAE_CACHE_PATH, file)) {
     // supportsGrayscale=false: the cached frame is already a 1-bit BMP.
     Bitmap bitmap(file, true, false);
-    const char* parseErr = bitmap.parseHeaders();
-    if (parseErr == nullptr) {
+    const BmpReaderError parseErr = bitmap.parseHeaders();
+    if (parseErr == BmpReaderError::Ok) {
       const bool rendered = renderBitmapSleepScreen(bitmap);
       file.close();
       if (rendered) return;
     } else {
-      LOG_ERR("SLP", "Tesserae BMP parse failed: %s", parseErr);
+      LOG_ERR("SLP", "Tesserae BMP parse failed: %s", Bitmap::errorToString(parseErr));
       file.close();
     }
   } else {

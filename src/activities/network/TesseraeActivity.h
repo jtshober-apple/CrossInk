@@ -42,9 +42,6 @@ class TesseraeActivity final : public Activity {
     return state_ == State::DISCOVERING || state_ == State::FETCHING_FRAME;
   }
 
-  // Called by ActivityManager when WifiSelectionActivity returns.
-  void onActivityResult(int resultCode, void* data) override;
-
  private:
   State state_ = State::WIFI_SELECTION;
   std::string statusMessage_;
@@ -53,7 +50,7 @@ class TesseraeActivity final : public Activity {
 
   // Timestamps for AWAITING_APPROVAL retry loop (ms).
   uint32_t approvalPollMs_ = 0;
-  static constexpr uint32_t APPROVAL_POLL_INTERVAL_MS = 5000;
+  static constexpr uint32_t APPROVAL_POLL_INTERVAL_MS = 30000;
 
   void setState(State state);
   void runDiscover();
