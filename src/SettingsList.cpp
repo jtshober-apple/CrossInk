@@ -325,6 +325,17 @@ const std::vector<SettingInfo>& getBaseSettingsList() {
     add(SettingInfo::Toggle(StrId::STR_KO_AUTO_PUSH_ON_CLOSE, &CrossPointSettings::koSyncAutoPushOnClose,
                             "koSyncAutoPushOnClose", StrId::STR_KOREADER_SYNC));
 
+    // --- Tesserae ---
+    add(SettingInfo::String(StrId::STR_TESSERAE_SERVER_URL, SETTINGS.tessServerUrl, sizeof(SETTINGS.tessServerUrl),
+                            "tessServerUrl", StrId::STR_TESSERAE));
+    // tessDeviceId, tessDeviceToken, tessEtag are managed internally; expose via their own activity.
+    add(SettingInfo::String(StrId::STR_TESSERAE_DEVICE_ID, SETTINGS.tessDeviceId, sizeof(SETTINGS.tessDeviceId),
+                            "tessDeviceId"));
+    add(SettingInfo::String(StrId::STR_TESSERAE_DEVICE_ID, SETTINGS.tessDeviceToken, sizeof(SETTINGS.tessDeviceToken),
+                            "tessDeviceToken"));
+    add(SettingInfo::String(StrId::STR_TESSERAE_DEVICE_ID, SETTINGS.tessEtag, sizeof(SETTINGS.tessEtag),
+                            "tessEtag"));
+
     // Legacy fields stay in JSON for one-time status bar migration; the web
     // editor uses /api/status-bars instead of exposing these controls.
     add(SettingInfo::Toggle(StrId::STR_CHAPTER_PAGE_COUNT, &CrossPointSettings::statusBarChapterPageCount,

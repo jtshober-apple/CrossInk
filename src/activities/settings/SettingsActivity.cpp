@@ -28,6 +28,7 @@
 #endif
 #include "FrontlightTimePickerActivity.h"
 #include "KOReaderSettingsActivity.h"
+#include "TesseraeActivity.h"
 #include "KeyboardLayoutsActivity.h"
 #include "MappedInputManager.h"
 #include "OpdsServerListActivity.h"
@@ -1147,6 +1148,9 @@ void SettingsActivity::toggleCurrentSetting() {
         break;
       case SettingAction::KOReaderSync:
         startActivityForResult(std::make_unique<KOReaderSettingsActivity>(renderer, mappedInput), resultHandler);
+        break;
+      case SettingAction::TesseraeSync:
+        startActivityForResult(std::make_unique<TesseraeActivity>(renderer, mappedInput), resultHandler);
         break;
       case SettingAction::OPDSBrowser:
         startActivityForResult(std::make_unique<OpdsServerListActivity>(renderer, mappedInput), resultHandler);

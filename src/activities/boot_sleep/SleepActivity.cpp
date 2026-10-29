@@ -1,6 +1,7 @@
 #include "SleepActivity.h"
 
 #include <BitmapHelpers.h>
+#include "TesseraeClient.h"
 #include <BoardConfig.h>
 #include <Epub.h>
 #include <FsHelpers.h>
@@ -618,6 +619,8 @@ void SleepActivity::onEnter() {
       return renderMinimalStatsSleepScreen();
     case (CrossPointSettings::SLEEP_SCREEN_MODE::DASHBOARD_SLEEP):
       return renderDashboardSleepScreen();
+    case (CrossPointSettings::SLEEP_SCREEN_MODE::TESSERAE_SLEEP):
+      return renderTesseraeSleepScreen();
     default:
       return renderDefaultSleepScreen();
   }
@@ -989,6 +992,26 @@ void SleepActivity::renderDashboardSleepScreen() const {
   theme.drawSleepScreen(renderer, book, &bookStats, &globalStats, progressPercent, chapterTitle.c_str(),
                         sleepCoverFilterInvertsGeneratedScreen());
   renderer.displayBuffer(HalDisplay::HALF_REFRESH, TURN_OFF_SCREEN_AFTER_SLEEP_REFRESH);
+}
+
+void SleepActivity::renderTesseraeSleepScreen() const {
+  FsFile file;
+  if (Storage.openFileForRead("SLP", TesseraeClient::TESSERAE_CACHE_PATH, file)) {
+    // supportsGrayscale=false: the cached frame is already a 1-bit BMP.
+    Bitmap bitmap(file, true, false);
+    const char* parseErr = bitmap.parseHeaders();
+    if (parseErr == nullptr) {
+      const bool rendered = renderBitmapSleepScreen(bitmap);
+      file.close();
+      if (rendered) return;
+    } else {
+      LOG_ERR("SLP", "Tesserae BMP parse failed: %s", parseErr);
+      file.close();
+    }
+  } else {
+    LOG_INF("SLP", "No Tesserae cached frame at %s — using default sleep screen", TesseraeClient::TESSERAE_CACHE_PATH);
+  }
+  renderDefaultSleepScreen();
 }
 
 void SleepActivity::renderLastScreenSleepScreen() const {

@@ -37,6 +37,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     QUICK_RESUME = 9,
     MINIMAL_STATS_SLEEP = 10,
     DASHBOARD_SLEEP = 11,
+    TESSERAE_SLEEP = 12,
     SLEEP_SCREEN_MODE_COUNT
   };
   enum SLEEP_SCREEN_COVER_MODE { FIT = 0, CROP = 1, SLEEP_SCREEN_COVER_MODE_COUNT };
@@ -692,6 +693,12 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t koSyncAutoPushOnClose = 0;
   // Quick Resume: keep current content visible with moon icon instead of showing a static sleep screen.
   uint8_t quickResumeSleepScreen = QUICK_RESUME_NEVER;
+  // Tesserae dashboard integration. tessServerUrl: base URL like http://192.168.1.x:8765
+  // tessDeviceId/Token: assigned by the server after discover. tessEtag: last ETag for If-None-Match.
+  char tessServerUrl[128] = "";
+  char tessDeviceId[64] = "";
+  char tessDeviceToken[128] = "";
+  char tessEtag[64] = "";
   // Master switch for automatic reading statistics; Time Left pace remains independent.
   uint8_t trackReadingStats = 1;
 
