@@ -1,3 +1,9 @@
+## [Unreleased]
+
+### Added
+
+- Auto-push KoSync on close: enable "Auto-push on close" in KOReader Sync settings to silently upload your reading position to your KOReader sync server each time you leave a book. The device returns to the home screen when the upload completes. If the server is unreachable or your position is already up to date, the device returns home without interruption.
+
 ## [v1.6.1] - 2026-10-03
 
 ### Added

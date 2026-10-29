@@ -53,6 +53,26 @@ class KOReaderSyncActivity final : public Activity {
         localProgressDeferred(true),
         readerOrientation(readerOrientation) {}
 
+  // Auto-push constructor: silently uploads local progress to KOReader sync
+  // server when the user closes a book, then reboots to the home screen.
+  // Never shows interactive UI; silently swallows network or credential errors.
+  explicit KOReaderSyncActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::string epubPath,
+                                DocumentMatchMethod matchMethod, const uint8_t readerOrientation,
+                                bool /*autoPush*/)
+      : Activity(NAME, renderer, mappedInput),
+        epubPath(std::move(epubPath)),
+        currentSpineIndex(0),
+        currentPage(0),
+        totalPagesInSpine(1),
+        primaryMatchMethod(matchMethod),
+        remoteMatchMethod(matchMethod),
+        remoteProgress{},
+        remotePosition{},
+        localProgress{},
+        localProgressDeferred(true),
+        readerOrientation(readerOrientation),
+        autoPushMode(true) {}
+
   void onEnter() override;
   void onExit() override;
   void loop() override;
@@ -110,6 +130,10 @@ class KOReaderSyncActivity final : public Activity {
   // Timed return for successful smart-sync terminal states.
   unsigned long autoReturnAt = 0;
   static constexpr unsigned long AUTO_RETURN_DELAY_MS = 1200;
+
+  // When true: upload-only, no UI shown, go home (not back to reader) on completion
+  // or any error. Set by the auto-push constructor; never changed after construction.
+  bool autoPushMode = false;
 
   // Tracks whether this session activated WiFi. Set in onEnter past the credentials
   // check; checked in onExit to decide whether to silent-reboot. Can't rely on

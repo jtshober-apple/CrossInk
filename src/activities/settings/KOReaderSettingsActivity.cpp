@@ -5,6 +5,7 @@
 
 #include <cstring>
 
+#include "CrossPointSettings.h"
 #include "KOReaderCredentialStore.h"
 #include "MappedInputManager.h"
 #include "SilentRestart.h"
@@ -19,10 +20,10 @@
 namespace fui = freeink::ui;
 
 namespace {
-constexpr int MENU_ITEMS = 8;
-const StrId menuNames[MENU_ITEMS] = {StrId::STR_USERNAME,          StrId::STR_PASSWORD,      StrId::STR_SYNC_SERVER_URL,
-                                     StrId::STR_DOCUMENT_MATCHING, StrId::STR_SEND_METADATA, StrId::STR_SYNC_BEHAVIOR,
-                                     StrId::STR_SIGN_UP,           StrId::STR_AUTHENTICATE};
+constexpr int MENU_ITEMS = 9;
+const StrId menuNames[MENU_ITEMS] = {StrId::STR_USERNAME,          StrId::STR_PASSWORD,          StrId::STR_SYNC_SERVER_URL,
+                                     StrId::STR_DOCUMENT_MATCHING, StrId::STR_SEND_METADATA,     StrId::STR_SYNC_BEHAVIOR,
+                                     StrId::STR_KO_AUTO_PUSH_ON_CLOSE, StrId::STR_SIGN_UP,       StrId::STR_AUTHENTICATE};
 constexpr fui::ActionId ACTION_ROW = 1;
 }  // namespace
 
@@ -165,12 +166,17 @@ void KOReaderSettingsActivity::handleSelection() {
     KOREADER_STORE.saveToFile();
     requestUpdate();
   } else if (selectedIndex == 6) {
+    // Auto-push on close - toggle on/off
+    SETTINGS.koSyncAutoPushOnClose = !SETTINGS.koSyncAutoPushOnClose;
+    SETTINGS.save();
+    requestUpdate();
+  } else if (selectedIndex == 7) {
     // Sign Up - create a new account on the sync server with the entered credentials
     if (!KOREADER_STORE.hasCredentials()) {
       return;
     }
     silentRestartToNetwork(NetworkBootTarget::KOREADER_AUTH, 1);
-  } else if (selectedIndex == 7) {
+  } else if (selectedIndex == 8) {
     // Authenticate
     if (!KOREADER_STORE.hasCredentials()) {
       // Can't authenticate without credentials - just show message briefly
@@ -216,6 +222,8 @@ void KOReaderSettingsActivity::buildListScreen(UiApp::ScreenType& screen) {
     } else if (i == 5) {
       values[i] =
           KOREADER_STORE.getSyncBehavior() == KOReaderSyncBehavior::SMART ? tr(STR_SMART_SYNC) : tr(STR_ASK_EVERY_TIME);
+    } else if (i == 6) {
+      // auto-push: rendered as a toggle, no text value needed
     } else {
       values[i] = KOREADER_STORE.hasCredentials() ? "" : std::string("[") + tr(STR_SET_CREDENTIALS_FIRST) + "]";
     }
@@ -227,8 +235,8 @@ void KOReaderSettingsActivity::buildListScreen(UiApp::ScreenType& screen) {
     fui::ListItem item;
     item.label = I18N.get(menuNames[i]);
     if (!values[i].empty()) item.value = values[i].c_str();
-    item.toggle = i == 4;
-    item.toggleChecked = KOREADER_STORE.getSendMetadata();
+    item.toggle = (i == 4 || i == 6);
+    item.toggleChecked = (i == 4) ? KOREADER_STORE.getSendMetadata() : (i == 6) ? SETTINGS.koSyncAutoPushOnClose : false;
     item.actionValue = static_cast<int16_t>(i);
     items.push_back(item);
   }

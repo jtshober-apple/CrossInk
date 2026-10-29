@@ -378,6 +378,11 @@ class EpubReaderActivity final : public Activity {
   bool saveProgress(int spineIndex, int currentPage, int pageCount, bool allowDuringFootnotePreview = false);
   bool queueProgressSave(int spineIndex, int currentPage, int pageCount, bool forceSave = false);
   void saveProgressBeforeRestart();
+  // If KoSync auto-push-on-close is enabled and credentials are set, saves progress and
+  // launches KOReaderSyncActivity in auto-push mode (which uploads then reboots home).
+  // Returns true when the auto-push activity was launched (caller must return immediately).
+  // Returns false when auto-push is disabled/unavailable; caller should call onGoHome().
+  bool tryAutoPushOnClose();
   bool saveReadingProgress();
   bool saveLinkStack() const;
   void loadLinkStack();
