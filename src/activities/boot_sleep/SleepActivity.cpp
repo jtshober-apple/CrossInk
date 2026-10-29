@@ -125,6 +125,8 @@ void* pngSleepOpen(const char* filename, int32_t* size) {
 constexpr int kSyncBadgePad = 6;        // inner horizontal/vertical padding
 constexpr int kSyncBadgeMargin = 10;    // margin from screen edge
 constexpr int kSyncBadgeLineWidth = 2;  // border thickness
+constexpr int kTesseraeFooterRightMargin = 18;      // footer inset on the Tesserae dashboard
+constexpr int kTesseraeFooterCenterFromBottom = 62;  // footer vertical centre, px above the bottom edge
 
 // Draws a small pill badge reading "–" in the bottom-right corner of the
 // screen.  Inverts colours when the sleep cover filter inverts the screen.
@@ -136,13 +138,18 @@ void drawKoSyncUnsyncedBadge(GfxRenderer& renderer) {
   if (KO_SYNC_STATUS.isSynced(path)) return;
 
   const int fontId = SMALL_FONT_ID;
-  const char* label = "-";  // ASCII dash: "not synced"
+  // The Tesserae dashboard reserves a slot at the right of its currently-reading footer for this tag
+  // (see x4-home-render): a labelled pill there, centred on the footer, instead of the corner dash.
+  const bool inFooterSlot = SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::TESSERAE_SLEEP;
+  const char* label = inFooterSlot ? "NOT SYNCED" : "-";  // ASCII dash: "not synced"
   const int textW = renderer.getTextWidth(fontId, label);
   const int textH = renderer.getLineHeight(fontId);
   const int badgeW = textW + kSyncBadgePad * 2;
   const int badgeH = textH + kSyncBadgePad * 2;
-  const int badgeX = renderer.getScreenWidth() - badgeW - kSyncBadgeMargin;
-  const int badgeY = renderer.getScreenHeight() - badgeH - kSyncBadgeMargin;
+  const int badgeX = inFooterSlot ? renderer.getScreenWidth() - badgeW - kTesseraeFooterRightMargin
+                                  : renderer.getScreenWidth() - badgeW - kSyncBadgeMargin;
+  const int badgeY = inFooterSlot ? renderer.getScreenHeight() - kTesseraeFooterCenterFromBottom - badgeH / 2
+                                  : renderer.getScreenHeight() - badgeH - kSyncBadgeMargin;
 
   const bool inverted =
       SETTINGS.sleepScreenCoverFilter == CrossPointSettings::SLEEP_SCREEN_COVER_FILTER::INVERTED_BLACK_AND_WHITE;
