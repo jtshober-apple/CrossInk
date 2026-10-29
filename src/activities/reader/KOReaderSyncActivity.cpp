@@ -19,6 +19,7 @@
 #include "EpubReaderUtils.h"
 #include "HalClock.h"
 #include "KOReaderCredentialStore.h"
+#include "KOSyncStatusStore.h"
 #include "KOReaderDocumentId.h"
 #include "MappedInputManager.h"
 #include "ReaderUtils.h"
@@ -659,6 +660,9 @@ void KOReaderSyncActivity::performUpload() {
     requestUpdate();
     return;
   }
+
+  // Record successful push so the sync status badge can reflect it.
+  KO_SYNC_STATUS.markSynced(epubPath);
 
   if (autoPushMode) {
     // Upload succeeded. Go home silently without showing any UI.

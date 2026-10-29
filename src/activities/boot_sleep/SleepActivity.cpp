@@ -34,6 +34,8 @@
 #include "AppVersion.h"
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
+#include "KOReaderCredentialStore.h"
+#include "KOSyncStatusStore.h"
 #include "ImageFolderIndex.h"
 #include "RecentBooksStore.h"
 #include "SleepCoverAssets.h"
@@ -114,6 +116,40 @@ void* pngSleepOpen(const char* filename, int32_t* size) {
   *size = f->size();
   return f;
 }
+// ---------------------------------------------------------------------------
+// KoSync status badge — drawn in the bottom-right corner of the framebuffer
+// before it is pushed to the display.  Only visible when auto-push is enabled,
+// credentials are configured, and the current book has never been pushed.
+// ---------------------------------------------------------------------------
+constexpr int kSyncBadgePad = 6;        // inner horizontal/vertical padding
+constexpr int kSyncBadgeMargin = 10;    // margin from screen edge
+constexpr int kSyncBadgeLineWidth = 2;  // border thickness
+
+// Draws a small pill badge reading "–" in the bottom-right corner of the
+// screen.  Inverts colours when the sleep cover filter inverts the screen.
+void drawKoSyncUnsyncedBadge(GfxRenderer& renderer) {
+  if (!SETTINGS.koSyncAutoPushOnClose) return;
+  if (!KOREADER_STORE.hasCredentials()) return;
+  const std::string& path = APP_STATE.openEpubPath;
+  if (path.empty()) return;
+  if (KO_SYNC_STATUS.isSynced(path)) return;
+
+  const int fontId = SMALL_FONT_ID;
+  const char* label = "-";  // ASCII dash: "not synced"
+  const int textW = renderer.getTextWidth(fontId, label);
+  const int textH = renderer.getLineHeight(fontId);
+  const int badgeW = textW + kSyncBadgePad * 2;
+  const int badgeH = textH + kSyncBadgePad * 2;
+  const int badgeX = renderer.getScreenWidth() - badgeW - kSyncBadgeMargin;
+  const int badgeY = renderer.getScreenHeight() - badgeH - kSyncBadgeMargin;
+
+  const bool inverted =
+      SETTINGS.sleepScreenCoverFilter == CrossPointSettings::SLEEP_SCREEN_COVER_FILTER::INVERTED_BLACK_AND_WHITE;
+  // Badge: filled black rectangle with white text (or inverted when filter is on).
+  renderer.fillRect(badgeX, badgeY, badgeW, badgeH, !inverted);
+  renderer.drawText(fontId, badgeX + kSyncBadgePad, badgeY + kSyncBadgePad, label, inverted);
+}
+
 void pngSleepClose(void* handle) {
   FsFile* f = reinterpret_cast<FsFile*>(handle);
   if (f) {
@@ -774,6 +810,7 @@ bool SleepActivity::renderBitmapSleepScreen(Bitmap& bitmap) const {
   }
 
   if (!hasGreyscale) {
+    drawKoSyncUnsyncedBadge(renderer);
     renderer.displayBuffer(HalDisplay::HALF_REFRESH, TURN_OFF_SCREEN_AFTER_SLEEP_REFRESH);
     return true;
   }
@@ -802,6 +839,8 @@ bool SleepActivity::renderBitmapSleepScreen(Bitmap& bitmap) const {
       renderer.setRenderMode(GfxRenderer::BW);
       return false;
     }
+    // Stamp badge into each grayscale plane so it appears in the final composite.
+    drawKoSyncUnsyncedBadge(renderer);
     if (mode == GfxRenderer::GRAYSCALE_LSB)
       renderer.copyGrayscaleLsbBuffers();
     else

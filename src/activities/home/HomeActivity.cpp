@@ -29,6 +29,8 @@
 #include "ClippingStore.h"
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
+#include "KOReaderCredentialStore.h"
+#include "KOSyncStatusStore.h"
 #include "GlobalActions.h"
 #include "MappedInputManager.h"
 #include "OpdsServerStore.h"
@@ -231,6 +233,39 @@ const char* savedItemsLabel(bool hasBookmarks, bool hasClippings) {
   if (hasBookmarks && hasClippings) return tr(STR_BOOKMARKS_AND_CLIPPINGS);
   if (hasClippings) return tr(STR_CLIPPINGS);
   return tr(STR_BOOKMARKS);
+}
+
+// ---------------------------------------------------------------------------
+// KoSync status badge for home screen cover
+// ---------------------------------------------------------------------------
+constexpr int kHomeSyncBadgePad = 5;
+constexpr int kHomeSyncBadgeMargin = 8;
+
+// Draws a small "–" badge in the bottom-right corner of the cover tile when
+// the currently-selected book has never been successfully pushed.
+void drawHomeCoverKoSyncBadge(GfxRenderer& renderer, const ThemeMetrics& metrics,
+                               const std::vector<RecentBook>& recentBooks, int selectorIndex) {
+  if (!SETTINGS.koSyncAutoPushOnClose) return;
+  if (!KOREADER_STORE.hasCredentials()) return;
+  if (recentBooks.empty()) return;
+  const int idx = std::max(0, std::min(selectorIndex, static_cast<int>(recentBooks.size()) - 1));
+  const std::string& path = recentBooks[idx].path;
+  if (path.empty() || KO_SYNC_STATUS.isSynced(path)) return;
+
+  const int fontId = SMALL_FONT_ID;
+  const char* label = "-";
+  const int textW = renderer.getTextWidth(fontId, label);
+  const int textH = renderer.getLineHeight(fontId);
+  const int badgeW = textW + kHomeSyncBadgePad * 2;
+  const int badgeH = textH + kHomeSyncBadgePad * 2;
+
+  // Anchor inside the cover tile, bottom-right corner.
+  const int coverBottom = metrics.homeTopPadding + metrics.homeCoverTileHeight;
+  const int badgeX = renderer.getScreenWidth() - badgeW - kHomeSyncBadgeMargin;
+  const int badgeY = coverBottom - badgeH - kHomeSyncBadgeMargin;
+
+  renderer.fillRect(badgeX, badgeY, badgeW, badgeH, true);   // black fill
+  renderer.drawText(fontId, badgeX + kHomeSyncBadgePad, badgeY + kHomeSyncBadgePad, label, false);  // white text
 }
 
 void appendHomeMenuItems(HomeMenuEntries& items, bool hasOpdsServers, bool hasReadingStats, bool hasBookmarks,
@@ -2124,6 +2159,10 @@ void HomeActivity::render(RenderLock&&) {
                           SETTINGS.isLibraryFileBrowserSwapped() ? tr(STR_LIBRARY) : tr(STR_BROWSE),
                           tr(STR_SETTINGS_SHORT), recentBooks.empty() ? "" : tr(STR_READ));
     }
+
+    // KoSync status badge: small corner indicator when auto-push is on,
+    // credentials exist, but the currently-shown book has never been pushed.
+    drawHomeCoverKoSyncBadge(renderer, metrics, recentBooks, selectorIndex);
 
     displayHomeBuffer();
 
