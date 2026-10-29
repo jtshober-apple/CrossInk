@@ -995,6 +995,9 @@ void SleepActivity::renderDashboardSleepScreen() const {
 }
 
 void SleepActivity::renderTesseraeSleepScreen() const {
+  // Pull the freshest dashboard before drawing; on any failure the cached frame below is used.
+  TesseraeClient::refreshBeforeSleep();
+
   FsFile file;
   if (Storage.openFileForRead("SLP", TesseraeClient::TESSERAE_CACHE_PATH, file)) {
     // supportsGrayscale=false: the cached frame is already a 1-bit BMP.

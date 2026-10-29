@@ -1,5 +1,6 @@
 #include "network/TesseraeClient.h"
 
+#include <Arduino.h>
 #include <ArduinoJson.h>
 #include <HalStorage.h>
 #include <Logging.h>
@@ -9,9 +10,12 @@
 
 #include <cstdio>
 #include <cstring>
+#include <optional>
 #include <string>
 
 #include "CrossPointSettings.h"
+#include "WifiCredentialStore.h"
+#include "network/WifiUtils.h"
 
 namespace {
 constexpr const char* TAG = "TESS";
@@ -22,6 +26,40 @@ constexpr int PANEL_W = 480;
 constexpr int PANEL_H = 800;
 constexpr const char* FIRMWARE_ID = "crossink";
 constexpr const char* FRAME_TMP_PATH = "/.crosspoint/tesserae_frame.tmp";
+constexpr uint32_t SLEEP_WIFI_TIMEOUT_MS = 10000;
+// Same order of magnitude as the KOSync TLS gate; skip the refresh rather than risk a failed handshake.
+constexpr uint32_t SLEEP_MIN_FREE_HEAP = 40000;
+constexpr uint32_t SLEEP_MIN_MAX_ALLOC_HEAP = 24000;
+
+// Blocking join of the last-used (else first) saved network. Returns true once connected.
+bool connectSavedWifi() {
+  std::optional<WifiCredential> cred;
+  const std::string last = WIFI_STORE.getLastConnectedSsid();
+  if (!last.empty()) cred = WIFI_STORE.findCredential(last);
+  if (!cred) cred = WIFI_STORE.getCredentialAt(0);
+  if (!cred) {
+    LOG_DBG(TAG, "sleep refresh: no saved WiFi network");
+    return false;
+  }
+
+  WiFi.persistent(false);
+  if (!WiFi.mode(WIFI_STA)) return false;
+  WiFi.begin(cred->ssid.c_str(), cred->password.c_str());
+  const uint32_t start = millis();
+  while (millis() - start < SLEEP_WIFI_TIMEOUT_MS) {
+    if (hasActiveStationWifiConnection()) return true;
+    delay(100);
+  }
+  LOG_ERR(TAG, "sleep refresh: WiFi connect timed out (%s)", cred->ssid.c_str());
+  return false;
+}
+
+void wifiOff() {
+  WiFi.disconnect(false);
+  delay(100);
+  WiFi.mode(WIFI_OFF);
+  delay(100);
+}
 
 std::string baseUrl() {
   std::string url = SETTINGS.tessServerUrl;
@@ -300,4 +338,44 @@ TesseraeClient::Error TesseraeClient::sendHeartbeat(uint16_t* nextPollSeconds) {
     }
   }
   return OK;
+}
+
+// ── refreshBeforeSleep ────────────────────────────────────────────────────────
+
+TesseraeClient::Error TesseraeClient::refreshBeforeSleep() {
+  if (SETTINGS.tessServerUrl[0] == '\0') return NOT_CONFIGURED;
+
+  if (ESP.getFreeHeap() < SLEEP_MIN_FREE_HEAP || ESP.getMaxAllocHeap() < SLEEP_MIN_MAX_ALLOC_HEAP) {
+    LOG_ERR(TAG, "sleep refresh: not enough heap (free=%u maxAlloc=%u), using cached frame",
+            static_cast<unsigned>(ESP.getFreeHeap()), static_cast<unsigned>(ESP.getMaxAllocHeap()));
+    return LOW_MEMORY;
+  }
+
+  const bool alreadyConnected = hasActiveStationWifiConnection();
+  if (!alreadyConnected && !connectSavedWifi()) {
+    wifiOff();
+    return NETWORK_ERROR;
+  }
+
+  Error err = OK;
+  if (SETTINGS.tessDeviceToken[0] == '\0') {
+    err = discover();
+    LOG_INF(TAG, "sleep refresh: discover: %s", errorString(err));
+  }
+  if (err == OK) {
+    err = fetchFrame();
+    if (err == NOT_PAIRED) {
+      // Server forgot us; try to re-claim once (works if the device is still registered by MAC).
+      err = discover();
+      if (err == OK) err = fetchFrame();
+    }
+    LOG_INF(TAG, "sleep refresh: fetchFrame: %s", errorString(err));
+    if (err == OK) {
+      uint16_t nextPollSeconds = 0;
+      sendHeartbeat(&nextPollSeconds);
+    }
+  }
+
+  if (!alreadyConnected) wifiOff();
+  return err;
 }

@@ -67,6 +67,15 @@ class TesseraeClient {
    */
   static Error sendHeartbeat(uint16_t* nextPollSeconds);
 
+  /**
+   * Best-effort refresh run right before the sleep screen is drawn. Joins the last-used saved WiFi
+   * network if not already connected, registers with the server if not yet paired (succeeds once
+   * the admin has clicked Register), fetches the latest frame, sends a heartbeat, and turns WiFi
+   * back off. Never blocks longer than the WiFi connect timeout plus the HTTP calls; on any
+   * failure the previously cached frame stays in place.
+   */
+  static Error refreshBeforeSleep();
+
  private:
   TesseraeClient() = delete;
 
