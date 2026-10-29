@@ -19,8 +19,8 @@
 #include "EpubReaderUtils.h"
 #include "HalClock.h"
 #include "KOReaderCredentialStore.h"
-#include "KOSyncStatusStore.h"
 #include "KOReaderDocumentId.h"
+#include "KOSyncStatusStore.h"
 #include "MappedInputManager.h"
 #include "ReaderUtils.h"
 #include "SdCardFontSystem.h"
@@ -391,8 +391,8 @@ void KOReaderSyncActivity::performSync() {
 
   if (result == KOReaderSyncClient::NOT_FOUND) {
     if (smartSyncEnabled() || autoPushMode) {
-      LOG_DBG("KOSync", "%s: no remote progress found; uploading local %.6f",
-              autoPushMode ? "Auto-push" : "Smart sync", localProgress.percentage);
+      LOG_DBG("KOSync", "%s: no remote progress found; uploading local %.6f", autoPushMode ? "Auto-push" : "Smart sync",
+              localProgress.percentage);
       performUpload();
       return;
     }

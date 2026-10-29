@@ -25,11 +25,11 @@ class TesseraeClient {
  public:
   enum Error {
     OK = 0,
-    NOT_CONFIGURED,   // tessServerUrl empty
-    NOT_PAIRED,       // tessDeviceToken empty — need to discover first
-    AWAITING_APPROVAL,// discover returned registered:false — admin must click Register in Tesserae
-    NO_FRAME,         // GET frame returned 404 — no dashboard rendered yet
-    FRAME_UNCHANGED,  // reserved; the server does not currently answer 304 for frame.bmp
+    NOT_CONFIGURED,     // tessServerUrl empty
+    NOT_PAIRED,         // tessDeviceToken empty — need to discover first
+    AWAITING_APPROVAL,  // discover returned registered:false — admin must click Register in Tesserae
+    NO_FRAME,           // GET frame returned 404 — no dashboard rendered yet
+    FRAME_UNCHANGED,    // reserved; the server does not currently answer 304 for frame.bmp
     NETWORK_ERROR,
     SERVER_ERROR,
     LOW_MEMORY,

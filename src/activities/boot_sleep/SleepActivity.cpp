@@ -1,7 +1,6 @@
 #include "SleepActivity.h"
 
 #include <BitmapHelpers.h>
-#include "network/TesseraeClient.h"
 #include <BoardConfig.h>
 #include <Epub.h>
 #include <FsHelpers.h>
@@ -13,6 +12,8 @@
 #include <I18n.h>
 #include <Memory.h>
 #include <PNGdec.h>
+
+#include "network/TesseraeClient.h"
 // PNGdec's bundled zlib internals leak this macro into later FreeInkUI headers.
 #undef local
 #include <Xtc.h>
@@ -35,9 +36,9 @@
 #include "AppVersion.h"
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
+#include "ImageFolderIndex.h"
 #include "KOReaderCredentialStore.h"
 #include "KOSyncStatusStore.h"
-#include "ImageFolderIndex.h"
 #include "RecentBooksStore.h"
 #include "SleepCoverAssets.h"
 #include "activities/reader/ReaderUtils.h"
@@ -122,10 +123,10 @@ void* pngSleepOpen(const char* filename, int32_t* size) {
 // before it is pushed to the display.  Only visible when auto-push is enabled,
 // credentials are configured, and the current book has never been pushed.
 // ---------------------------------------------------------------------------
-constexpr int kSyncBadgePad = 6;        // inner horizontal/vertical padding
-constexpr int kSyncBadgeMargin = 10;    // margin from screen edge
-constexpr int kSyncBadgeLineWidth = 2;  // border thickness
-constexpr int kTesseraeFooterRightMargin = 18;      // footer inset on the Tesserae dashboard
+constexpr int kSyncBadgePad = 6;                     // inner horizontal/vertical padding
+constexpr int kSyncBadgeMargin = 10;                 // margin from screen edge
+constexpr int kSyncBadgeLineWidth = 2;               // border thickness
+constexpr int kTesseraeFooterRightMargin = 18;       // footer inset on the Tesserae dashboard
 constexpr int kTesseraeFooterCenterFromBottom = 62;  // footer vertical centre, px above the bottom edge
 
 // Draws a small pill badge reading "–" in the bottom-right corner of the

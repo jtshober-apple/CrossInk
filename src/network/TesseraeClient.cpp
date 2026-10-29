@@ -89,8 +89,7 @@ void readMac(uint8_t (&mac)[6]) {
 
 // Sends a JSON POST and collects up to `maxBytes` of the response body. Returns the HTTP status
 // (<= 0 on transport failure). `withToken` adds the per-device auth header.
-int postJson(const std::string& url, const std::string& body, bool withToken, std::string& response,
-             size_t maxBytes) {
+int postJson(const std::string& url, const std::string& body, bool withToken, std::string& response, size_t maxBytes) {
   response.clear();
   freeink::SecureHttpClient http;
   http.setInsecure();
@@ -115,17 +114,28 @@ int postJson(const std::string& url, const std::string& body, bool withToken, st
 
 const char* TesseraeClient::errorString(Error error) {
   switch (error) {
-    case OK:                return "OK";
-    case NOT_CONFIGURED:    return "NOT_CONFIGURED";
-    case NOT_PAIRED:        return "NOT_PAIRED";
-    case AWAITING_APPROVAL: return "AWAITING_APPROVAL";
-    case NO_FRAME:          return "NO_FRAME";
-    case FRAME_UNCHANGED:   return "FRAME_UNCHANGED";
-    case NETWORK_ERROR:     return "NETWORK_ERROR";
-    case SERVER_ERROR:      return "SERVER_ERROR";
-    case LOW_MEMORY:        return "LOW_MEMORY";
-    case INVALID_RESPONSE:  return "INVALID_RESPONSE";
-    default:                return "UNKNOWN";
+    case OK:
+      return "OK";
+    case NOT_CONFIGURED:
+      return "NOT_CONFIGURED";
+    case NOT_PAIRED:
+      return "NOT_PAIRED";
+    case AWAITING_APPROVAL:
+      return "AWAITING_APPROVAL";
+    case NO_FRAME:
+      return "NO_FRAME";
+    case FRAME_UNCHANGED:
+      return "FRAME_UNCHANGED";
+    case NETWORK_ERROR:
+      return "NETWORK_ERROR";
+    case SERVER_ERROR:
+      return "SERVER_ERROR";
+    case LOW_MEMORY:
+      return "LOW_MEMORY";
+    case INVALID_RESPONSE:
+      return "INVALID_RESPONSE";
+    default:
+      return "UNKNOWN";
   }
 }
 

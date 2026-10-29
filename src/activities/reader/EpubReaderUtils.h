@@ -100,7 +100,8 @@ inline bool saveProgress(Epub& epub, int spineIndex, int pageNumber, int pageCou
   const std::string progressPath = epub.getCachePath() + "/progress.bin";
   // Repeated menu, restart and exit saves can describe the same position.
   // Compare the complete payload so relayout counts and text offsets still persist.
-  KO_SYNC_STATUS.notePosition(epub.getPath(), (static_cast<uint32_t>(spineIndex) << 16) | static_cast<uint32_t>(pageNumber));
+  KO_SYNC_STATUS.notePosition(epub.getPath(),
+                              (static_cast<uint32_t>(spineIndex) << 16) | static_cast<uint32_t>(pageNumber));
   if (fileContentEquals("ERS", progressPath.c_str(), data, dataSize)) return true;
 
   const std::string tmpPath = progressPath + ".tmp";

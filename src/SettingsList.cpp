@@ -335,8 +335,7 @@ const std::vector<SettingInfo>& getBaseSettingsList() {
                             "tessDeviceId"));
     add(SettingInfo::String(StrId::STR_TESSERAE_DEVICE_ID, SETTINGS.tessDeviceToken, sizeof(SETTINGS.tessDeviceToken),
                             "tessDeviceToken"));
-    add(SettingInfo::String(StrId::STR_TESSERAE_DEVICE_ID, SETTINGS.tessEtag, sizeof(SETTINGS.tessEtag),
-                            "tessEtag"));
+    add(SettingInfo::String(StrId::STR_TESSERAE_DEVICE_ID, SETTINGS.tessEtag, sizeof(SETTINGS.tessEtag), "tessEtag"));
 
     // Legacy fields stay in JSON for one-time status bar migration; the web
     // editor uses /api/status-bars instead of exposing these controls.
