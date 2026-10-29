@@ -282,6 +282,11 @@ void KOReaderSyncActivity::completeAlreadySynced() {
 void KOReaderSyncActivity::onWifiSelectionComplete(const bool success) {
   if (!success) {
     LOG_DBG("KOSync", "WiFi connection failed, exiting");
+    if (autoPushMode) {
+      // WiFi failed; silently go home. onExit() will call wifiOff()+silentRestart().
+      finish();
+      return;
+    }
     returnToReader();
     return;
   }
@@ -384,9 +389,9 @@ void KOReaderSyncActivity::performSync() {
   }
 
   if (result == KOReaderSyncClient::NOT_FOUND) {
-    if (smartSyncEnabled()) {
-      LOG_DBG("KOSync", "Smart sync: no remote progress found for known document hashes; uploading local %.6f",
-              localProgress.percentage);
+    if (smartSyncEnabled() || autoPushMode) {
+      LOG_DBG("KOSync", "%s: no remote progress found; uploading local %.6f",
+              autoPushMode ? "Auto-push" : "Smart sync", localProgress.percentage);
       performUpload();
       return;
     }
@@ -402,6 +407,14 @@ void KOReaderSyncActivity::performSync() {
   }
 
   if (result != KOReaderSyncClient::OK) {
+    if (autoPushMode) {
+      LOG_DBG("KOSync", "Auto-push: sync fetch failed (%s), returning home silently",
+              KOReaderSyncClient::errorString(result));
+      wifiActivated = false;
+      wifiOff();
+      silentRestart();
+      return;
+    }
     {
       RenderLock lock(*this);
       state = SYNC_FAILED;
@@ -509,22 +522,40 @@ void KOReaderSyncActivity::performSync() {
     }
   }
 
-  if (smartSyncEnabled()) {
+  if (smartSyncEnabled() || autoPushMode) {
     static constexpr float SAME_PROGRESS_EPSILON = 0.001f;  // 0.1 percentage points
     const float delta = localProgress.percentage - remoteProgress.percentage;
-    LOG_DBG("KOSync", "Smart decision: doc=%s local=%.6f remote=%.6f delta=%.6f remoteXpath=%s mapped=%d/%d",
-            documentHash.c_str(), localProgress.percentage, remoteProgress.percentage, delta,
-            remoteProgress.progress.c_str(), remotePosition.spineIndex, remotePosition.pageNumber);
+    LOG_DBG("KOSync", "%s decision: doc=%s local=%.6f remote=%.6f delta=%.6f remoteXpath=%s mapped=%d/%d",
+            autoPushMode ? "Auto-push" : "Smart", documentHash.c_str(), localProgress.percentage,
+            remoteProgress.percentage, delta, remoteProgress.progress.c_str(), remotePosition.spineIndex,
+            remotePosition.pageNumber);
     if (std::fabs(delta) <= SAME_PROGRESS_EPSILON) {
+      if (autoPushMode) {
+        // Equal progress; nothing to push. Go home silently.
+        LOG_DBG("KOSync", "Auto-push: progress equal, returning home");
+        wifiActivated = false;
+        wifiOff();
+        silentRestart();
+        return;
+      }
       completeAlreadySynced();
       return;
     }
 
     if (delta > 0) {
-      // Alternate hashes are only probes for newer remote state. Keep uploads
-      // on the user's configured matching method so its primary record heals.
+      // Local is ahead — upload. Keep uploads on the primary hash so its record heals.
       documentHash = primaryHash;
       performUpload();
+      return;
+    }
+
+    if (autoPushMode) {
+      // Remote is ahead; don't pull — user is leaving. Go home silently.
+      LOG_DBG("KOSync", "Auto-push: remote ahead (%.6f > %.6f), skipping pull, returning home",
+              remoteProgress.percentage, localProgress.percentage);
+      wifiActivated = false;
+      wifiOff();
+      silentRestart();
       return;
     }
 
@@ -629,6 +660,14 @@ void KOReaderSyncActivity::performUpload() {
     return;
   }
 
+  if (autoPushMode) {
+    // Upload succeeded. Go home silently without showing any UI.
+    LOG_DBG("KOSync", "Auto-push: upload complete, returning home");
+    wifiActivated = false;
+    wifiOff();
+    silentRestart();
+    return;
+  }
   {
     RenderLock lock(*this);
     state = UPLOAD_COMPLETE;
@@ -683,6 +722,12 @@ void KOReaderSyncActivity::onEnter() {
 
   // Check for credentials first
   if (!KOREADER_STORE.hasCredentials()) {
+    if (autoPushMode) {
+      // No credentials; nothing to push. Exit silently to home.
+      LOG_DBG("KOSync", "Auto-push: no credentials, returning home");
+      silentRestart();
+      return;
+    }
     state = NO_CREDENTIALS;
     requestUpdate();
     return;
@@ -714,7 +759,11 @@ void KOReaderSyncActivity::onExit() {
 
   if (wifiActivated) {
     wifiOff();
-    silentRestartToReader(true);
+    if (autoPushMode) {
+      silentRestart();
+    } else {
+      silentRestartToReader(true);
+    }
   }
 }
 
@@ -864,8 +913,23 @@ void KOReaderSyncActivity::loop() {
   }
 
   if (state == NO_CREDENTIALS || state == SYNC_FAILED || state == UPLOAD_COMPLETE || state == SYNC_COMPLETE) {
+    auto exitActivity = [this] {
+      if (autoPushMode) {
+        wifiActivated = false;
+        wifiOff();
+        silentRestart();
+      } else {
+        returnToReader();
+      }
+    };
     if (autoReturnAt != 0 && millis() >= autoReturnAt) {
-      returnToReader();
+      exitActivity();
+      return;
+    }
+    if (autoPushMode) {
+      // In auto-push mode, these states should not normally be reached (all paths
+      // reboot directly). If we somehow land here, bail out immediately.
+      exitActivity();
       return;
     }
     if (mappedInput.wasReleased(MappedInputManager::Button::Back) ||

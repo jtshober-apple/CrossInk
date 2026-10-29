@@ -2860,7 +2860,7 @@ void EpubReaderActivity::loop() {
   if (goHomeAfterBuildCancel.load(std::memory_order_relaxed) && !RenderLock::peek()) {
     goHomeAfterBuildCancel.store(false, std::memory_order_relaxed);
     sectionBuildCancelRequested.store(false, std::memory_order_relaxed);
-    onGoHome();
+    if (!tryAutoPushOnClose()) onGoHome();
     return;
   }
 
@@ -3061,7 +3061,7 @@ void EpubReaderActivity::loop() {
         activityManager.goToReader(openPath);
         return;
       case EndOfBookOptions::Action::GoHome:
-        onGoHome();
+        if (!tryAutoPushOnClose()) onGoHome();
         return;
       case EndOfBookOptions::Action::LastPage:
         currentSpineIndex = std::max(epub->getSpineItemsCount() - 1, 0);
@@ -3174,7 +3174,7 @@ void EpubReaderActivity::loop() {
       restoreSavedPosition();
       return;
     }
-    onGoHome();
+    if (!tryAutoPushOnClose()) onGoHome();
     return;
   }
 
@@ -3283,7 +3283,7 @@ void EpubReaderActivity::loop() {
         }
         if (currentSpineIndex > 0 && currentSpineIndex >= epub->getSpineItemsCount()) {
           if (nextLongPressed) {
-            onGoHome();
+            if (!tryAutoPushOnClose()) onGoHome();
           } else {
             currentSpineIndex = epub->getSpineItemsCount() - 1;
             nextPageNumber = 0;
@@ -3371,7 +3371,7 @@ void EpubReaderActivity::loop() {
       return;
     }
     if (nextTriggered) {
-      onGoHome();
+      if (!tryAutoPushOnClose()) onGoHome();
     } else {
       currentSpineIndex = epub->getSpineItemsCount() - 1;
       nextPageNumber = 0;
@@ -3965,7 +3965,7 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuAction action, const 
       break;
     }
     case EpubReaderMenuAction::GO_HOME: {
-      onGoHome();
+      if (!tryAutoPushOnClose()) onGoHome();
       return;
     }
     case EpubReaderMenuAction::DELETE_STATS: {
@@ -8301,4 +8301,26 @@ void EpubReaderActivity::saveProgressBeforeRestart() {
   if (epub && !saveLinkStack()) {
     LOG_ERR("READER", "Failed to save link return stack before restart");
   }
+}
+
+bool EpubReaderActivity::tryAutoPushOnClose() {
+  if (!SETTINGS.koSyncAutoPushOnClose) return false;
+  if (!KOREADER_STORE.hasCredentials()) return false;
+  if (!epub) return false;
+
+  // Save position so the auto-push activity can read it from the progress file.
+  saveProgressBeforeRestart();
+
+  const DocumentMatchMethod matchMethod = KOREADER_STORE.getMatchMethod();
+  auto syncActivity = makeUniqueNoThrow<KOReaderSyncActivity>(renderer, mappedInput, epub->getPath(), matchMethod,
+                                                              SETTINGS.orientation, /*autoPush=*/true);
+  if (!syncActivity) {
+    LOG_ERR("KOSync", "Auto-push OOM (free=%u maxAlloc=%u); falling back to normal home", ESP.getFreeHeap(),
+            ESP.getMaxAllocHeap());
+    return false;
+  }
+
+  pauseReadingPaceTimer("auto_push_on_close");
+  activityManager.replaceActivity(std::move(syncActivity));
+  return true;
 }

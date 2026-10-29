@@ -688,6 +688,8 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint16_t keyboardLayouts = 0;
   // Custom KOReader sync device display name. Empty means use the hardware default.
   char deviceName[21] = "";
+  // When true, automatically push local progress to KOReader sync server on book close, then return home.
+  bool koSyncAutoPushOnClose = false;
   // Quick Resume: keep current content visible with moon icon instead of showing a static sleep screen.
   uint8_t quickResumeSleepScreen = QUICK_RESUME_NEVER;
   // Master switch for automatic reading statistics; Time Left pace remains independent.
