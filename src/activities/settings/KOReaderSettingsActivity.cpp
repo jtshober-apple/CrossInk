@@ -168,7 +168,7 @@ void KOReaderSettingsActivity::handleSelection() {
   } else if (selectedIndex == 6) {
     // Auto-push on close - toggle on/off
     SETTINGS.koSyncAutoPushOnClose = !SETTINGS.koSyncAutoPushOnClose;
-    SETTINGS.save();
+    SETTINGS.saveToFile();
     requestUpdate();
   } else if (selectedIndex == 7) {
     // Sign Up - create a new account on the sync server with the entered credentials
