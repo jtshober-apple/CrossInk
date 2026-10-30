@@ -22,13 +22,13 @@
 class TesseraeActivity final : public Activity {
  public:
   enum class State {
-    ENTER_URL,           // keyboard sub-flow for the server URL
-    WIFI_SELECTION,      // waiting for WifiSelectionActivity to return
-    DISCOVERING,         // POSTing /discover
-    AWAITING_APPROVAL,   // 202 — waiting for admin; user can retry
-    FETCHING_FRAME,      // GETting frame.bmp
-    DONE,                // frame saved; show success and finish
-    ERROR,               // unrecoverable; user can retry or go back
+    ENTER_URL,          // keyboard sub-flow for the server URL
+    WIFI_SELECTION,     // waiting for WifiSelectionActivity to return
+    DISCOVERING,        // POSTing /discover
+    AWAITING_APPROVAL,  // 202 — waiting for admin; user can retry
+    FETCHING_FRAME,     // GETting frame.bmp
+    DONE,               // frame saved; show success and finish
+    ERROR,              // unrecoverable; user can retry or go back
   };
 
   explicit TesseraeActivity(GfxRenderer& renderer, MappedInputManager& mappedInput);
@@ -39,9 +39,7 @@ class TesseraeActivity final : public Activity {
   void render(RenderLock&&) override;
 
   bool preventAutoSleep() override { return true; }
-  bool skipLoopDelay() override {
-    return state_ == State::DISCOVERING || state_ == State::FETCHING_FRAME;
-  }
+  bool skipLoopDelay() override { return state_ == State::DISCOVERING || state_ == State::FETCHING_FRAME; }
 
  private:
   State state_ = State::WIFI_SELECTION;

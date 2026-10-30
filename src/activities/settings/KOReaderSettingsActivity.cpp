@@ -21,9 +21,10 @@ namespace fui = freeink::ui;
 
 namespace {
 constexpr int MENU_ITEMS = 9;
-const StrId menuNames[MENU_ITEMS] = {StrId::STR_USERNAME,          StrId::STR_PASSWORD,          StrId::STR_SYNC_SERVER_URL,
-                                     StrId::STR_DOCUMENT_MATCHING, StrId::STR_SEND_METADATA,     StrId::STR_SYNC_BEHAVIOR,
-                                     StrId::STR_KO_AUTO_PUSH_ON_CLOSE, StrId::STR_SIGN_UP,       StrId::STR_AUTHENTICATE};
+const StrId menuNames[MENU_ITEMS] = {
+    StrId::STR_USERNAME,      StrId::STR_PASSWORD,      StrId::STR_SYNC_SERVER_URL,       StrId::STR_DOCUMENT_MATCHING,
+    StrId::STR_SEND_METADATA, StrId::STR_SYNC_BEHAVIOR, StrId::STR_KO_AUTO_PUSH_ON_CLOSE, StrId::STR_SIGN_UP,
+    StrId::STR_AUTHENTICATE};
 constexpr fui::ActionId ACTION_ROW = 1;
 }  // namespace
 
@@ -236,7 +237,9 @@ void KOReaderSettingsActivity::buildListScreen(UiApp::ScreenType& screen) {
     item.label = I18N.get(menuNames[i]);
     if (!values[i].empty()) item.value = values[i].c_str();
     item.toggle = (i == 4 || i == 6);
-    item.toggleChecked = (i == 4) ? KOREADER_STORE.getSendMetadata() : (i == 6) ? SETTINGS.koSyncAutoPushOnClose : false;
+    item.toggleChecked = (i == 4)   ? KOREADER_STORE.getSendMetadata()
+                         : (i == 6) ? SETTINGS.koSyncAutoPushOnClose
+                                    : false;
     item.actionValue = static_cast<int16_t>(i);
     items.push_back(item);
   }

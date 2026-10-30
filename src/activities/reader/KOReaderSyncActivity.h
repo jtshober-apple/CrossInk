@@ -57,8 +57,7 @@ class KOReaderSyncActivity final : public Activity {
   // server when the user closes a book, then reboots to the home screen.
   // Never shows interactive UI; silently swallows network or credential errors.
   explicit KOReaderSyncActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::string epubPath,
-                                DocumentMatchMethod matchMethod, const uint8_t readerOrientation,
-                                bool /*autoPush*/)
+                                DocumentMatchMethod matchMethod, const uint8_t readerOrientation, bool /*autoPush*/)
       : Activity(NAME, renderer, mappedInput),
         epubPath(std::move(epubPath)),
         currentSpineIndex(0),

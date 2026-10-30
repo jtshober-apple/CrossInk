@@ -17,12 +17,12 @@ static uint32_t millis() {
 
 #include "CrossPointSettings.h"
 #include "MappedInputManager.h"
-#include "network/TesseraeClient.h"
 #include "WifiSelectionActivity.h"
-#include "components/TouchHeaderBackButton.h"
 #include "activities/util/KeyboardEntryActivity.h"
+#include "components/TouchHeaderBackButton.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
+#include "network/TesseraeClient.h"
 
 namespace {
 constexpr const char* TAG = "TESS_ACT";
@@ -71,16 +71,13 @@ void TesseraeActivity::onEnter() {
 #endif
 }
 
-void TesseraeActivity::onExit() {
-  Activity::onExit();
-}
+void TesseraeActivity::onExit() { Activity::onExit(); }
 
 void TesseraeActivity::loop() {
   using MIB = MappedInputManager::Button;
 
   // Back button or touch-header back always available.
-  const bool backPressed = mappedInput.wasPressed(MIB::Back) ||
-                           TouchHeaderBackButton::wasTapped(mappedInput, renderer);
+  const bool backPressed = mappedInput.wasPressed(MIB::Back) || TouchHeaderBackButton::wasTapped(mappedInput, renderer);
 
   switch (state_) {
     case State::WIFI_SELECTION:
@@ -98,9 +95,15 @@ void TesseraeActivity::loop() {
       break;
 
     case State::AWAITING_APPROVAL: {
-      if (backPressed) { exitViaBack(); return; }
+      if (backPressed) {
+        exitViaBack();
+        return;
+      }
       // Retry button (front/OK on button devices).
-      if (mappedInput.wasPressed(MIB::Confirm)) { setState(State::DISCOVERING); return; }
+      if (mappedInput.wasPressed(MIB::Confirm)) {
+        setState(State::DISCOVERING);
+        return;
+      }
       // Auto-poll every APPROVAL_POLL_INTERVAL_MS.
       const uint32_t now = millis();
       if (approvalPollMs_ == 0 || (now - approvalPollMs_) >= APPROVAL_POLL_INTERVAL_MS) {
@@ -117,11 +120,16 @@ void TesseraeActivity::loop() {
 
     case State::DONE:
       // Any press finishes the activity.
-      if (backPressed || mappedInput.wasPressed(MIB::Confirm)) { finish(); }
+      if (backPressed || mappedInput.wasPressed(MIB::Confirm)) {
+        finish();
+      }
       break;
 
     case State::ERROR:
-      if (backPressed) { exitViaBack(); return; }
+      if (backPressed) {
+        exitViaBack();
+        return;
+      }
       // Retry.
       if (mappedInput.wasPressed(MIB::Confirm)) {
         if (SETTINGS.tessDeviceToken[0] != '\0') {
@@ -291,19 +299,17 @@ void TesseraeActivity::renderStatus(const char* heading, const char* body, bool 
                               EpdFontFamily::BOLD);
   }
   if (body && body[0] != '\0') {
-    const Rect textArea{metrics.contentSidePadding, 0,
-                        pageWidth - metrics.contentSidePadding * 2, pageHeight};
+    const Rect textArea{metrics.contentSidePadding, 0, pageWidth - metrics.contentSidePadding * 2, pageHeight};
     UITheme::drawCenteredWrappedText(renderer, textArea, SMALL_FONT_ID,
-                                     centerY + renderer.getLineHeight(UI_10_FONT_ID) / 2 + 8,
-                                     body, 3, false, EpdFontFamily::REGULAR);
+                                     centerY + renderer.getLineHeight(UI_10_FONT_ID) / 2 + 8, body, 3, false,
+                                     EpdFontFamily::REGULAR);
   }
 
   if (!mappedInput.hasTouchHardware()) {
     // On touch devices Back lives in the header; only button devices need hints.
-    const auto labels = mappedInput.mapLabels(showBack ? mappedInput.withBackArrow(tr(STR_BACK)) : MappedInputManager::Label{},
-                                              showRetry ? MappedInputManager::Label{tr(STR_TESSERAE_SYNC_NOW)}
-                                                        : MappedInputManager::Label{},
-                                              "", "");
+    const auto labels = mappedInput.mapLabels(
+        showBack ? mappedInput.withBackArrow(tr(STR_BACK)) : MappedInputManager::Label{},
+        showRetry ? MappedInputManager::Label{tr(STR_TESSERAE_SYNC_NOW)} : MappedInputManager::Label{}, "", "");
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
   }
 }

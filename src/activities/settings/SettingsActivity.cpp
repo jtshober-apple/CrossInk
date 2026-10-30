@@ -28,7 +28,6 @@
 #endif
 #include "FrontlightTimePickerActivity.h"
 #include "KOReaderSettingsActivity.h"
-#include "activities/network/TesseraeActivity.h"
 #include "KeyboardLayoutsActivity.h"
 #include "MappedInputManager.h"
 #include "OpdsServerListActivity.h"
@@ -39,6 +38,7 @@
 #include "SettingsList.h"
 #include "SilentRestart.h"
 #include "StatusBarSettingsActivity.h"
+#include "activities/network/TesseraeActivity.h"
 #include "activities/network/WifiSelectionActivity.h"
 #include "activities/reader/GlobalReadingStats.h"
 #include "activities/util/ConfirmationActivity.h"

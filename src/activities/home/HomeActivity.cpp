@@ -29,9 +29,9 @@
 #include "ClippingStore.h"
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
+#include "GlobalActions.h"
 #include "KOReaderCredentialStore.h"
 #include "KOSyncStatusStore.h"
-#include "GlobalActions.h"
 #include "MappedInputManager.h"
 #include "OpdsServerStore.h"
 #include "RecentBookProgress.h"
@@ -244,7 +244,7 @@ constexpr int kHomeSyncBadgeMargin = 8;
 // Draws a small "–" badge in the bottom-right corner of the cover tile when
 // the currently-selected book has never been successfully pushed.
 void drawHomeCoverKoSyncBadge(GfxRenderer& renderer, const ThemeMetrics& metrics,
-                               const std::vector<RecentBook>& recentBooks, int selectorIndex) {
+                              const std::vector<RecentBook>& recentBooks, int selectorIndex) {
   if (!SETTINGS.koSyncAutoPushOnClose) return;
   if (!KOREADER_STORE.hasCredentials()) return;
   if (recentBooks.empty()) return;
@@ -264,7 +264,7 @@ void drawHomeCoverKoSyncBadge(GfxRenderer& renderer, const ThemeMetrics& metrics
   const int badgeX = renderer.getScreenWidth() - badgeW - kHomeSyncBadgeMargin;
   const int badgeY = coverBottom - badgeH - kHomeSyncBadgeMargin;
 
-  renderer.fillRect(badgeX, badgeY, badgeW, badgeH, true);   // black fill
+  renderer.fillRect(badgeX, badgeY, badgeW, badgeH, true);                                          // black fill
   renderer.drawText(fontId, badgeX + kHomeSyncBadgePad, badgeY + kHomeSyncBadgePad, label, false);  // white text
 }
 
