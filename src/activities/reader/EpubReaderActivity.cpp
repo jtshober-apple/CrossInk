@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cstdlib>
 #include <cstring>
 #include <iterator>
 #include <limits>
@@ -78,9 +79,11 @@
 #include "util/BookCacheUtils.h"
 #include "util/BookMoveUtils.h"
 #include "util/Dictionary.h"
+#include "util/RtcMinutes.h"
 #include "util/ScreenshotUtil.h"
 
 namespace {
+constexpr const char* kBackgroundPushStampPath = "/.crosspoint/kosync_bgpush";
 constexpr unsigned long TOUCH_DICTIONARY_LOOKUP_HOLD_MS = 1000;
 // pagesPerRefresh now comes from SETTINGS.getRefreshFrequency()
 constexpr unsigned long longPressMenuMs = 600;
@@ -2820,6 +2823,7 @@ void EpubReaderActivity::loop() {
     finish();
     return;
   }
+  if (!rawReaderInput && maybeBackgroundKoSyncPush()) return;
 
 #if CROSSINK_APP_CAP_TOUCH
   if (handlePinchFontResize()) {
@@ -7143,6 +7147,7 @@ bool EpubReaderActivity::queueProgressSave(const int spineIndex, const int curre
     return true;
   }
   const uint32_t positionKey = (static_cast<uint32_t>(spineIndex) << 16) | static_cast<uint16_t>(currentPage);
+  noteKoSyncPageTurn(positionKey);
   if (!progressSaveDebouncer.observe(positionKey, static_cast<uint32_t>(pageCount)) && !forceSave) {
     return true;
   }
@@ -8301,6 +8306,72 @@ void EpubReaderActivity::saveProgressBeforeRestart() {
   if (epub && !saveLinkStack()) {
     LOG_ERR("READER", "Failed to save link return stack before restart");
   }
+}
+
+void EpubReaderActivity::noteKoSyncPageTurn(const uint32_t positionKey) {
+  if (positionKey == koSyncLastPositionKey) return;
+  // The first position seen after opening the book is the resume point, not a page turn.
+  if (koSyncLastPositionKey != 0xFFFFFFFFu) {
+    koSyncPagesSincePush++;
+    koSyncLastTurnMs = millis();
+  }
+  koSyncLastPositionKey = positionKey;
+}
+
+bool EpubReaderActivity::maybeBackgroundKoSyncPush() {
+  // Nothing to push until a page has been turned in this session.
+  if (koSyncPagesSincePush == 0) return false;
+  if (SETTINGS.koSyncPushIdleSec == 0 && SETTINGS.koSyncPushPages == 0) return false;
+  if (!KOREADER_STORE.hasCredentials() || !epub || activeFootnotePreview) return false;
+
+  // Never interrupt a burst of page turns: wait for a short settle even when the page count is reached.
+  constexpr unsigned long kSettleMs = 4000;
+  const unsigned long quietMs = millis() - koSyncLastTurnMs;
+  const bool idleReached = SETTINGS.koSyncPushIdleSec != 0 && quietMs >= SETTINGS.koSyncPushIdleSec * 1000UL;
+  const bool pagesReached =
+      SETTINGS.koSyncPushPages != 0 && koSyncPagesSincePush >= SETTINGS.koSyncPushPages && quietMs >= kSettleMs;
+  if (!idleReached && !pagesReached) return false;
+
+  // Back off after an attempt so a reader away from its Wi-Fi does not reboot after every pause.
+  // The stamp lives on the SD card because every push attempt reboots the device.
+  constexpr int64_t kMinMinutesBetweenPushes = 3;
+  int64_t nowMin = 0;
+  const bool haveClock = rtcMinutesSinceEpoch(nowMin);
+  if (haveClock) {
+    FsFile stamp;
+    if (Storage.openFileForRead("KOSync", kBackgroundPushStampPath, stamp)) {
+      char buf[24] = {};
+      stamp.read(buf, sizeof(buf) - 1);
+      stamp.close();
+      const long long last = atoll(buf);
+      if (last > 0 && nowMin >= last && nowMin - last < kMinMinutesBetweenPushes) return false;
+    }
+  }
+
+  LOG_INF("KOSync", "Background push: %u pages, quiet %lu ms (idle=%d pages=%d)",
+          static_cast<unsigned>(koSyncPagesSincePush), quietMs, idleReached, pagesReached);
+  if (haveClock) {
+    FsFile stamp;
+    if (Storage.openFileForWrite("KOSync", kBackgroundPushStampPath, stamp)) {
+      char buf[24];
+      const int n = snprintf(buf, sizeof(buf), "%lld", static_cast<long long>(nowMin));
+      stamp.write(reinterpret_cast<const uint8_t*>(buf), n);
+      stamp.close();
+    }
+  }
+  koSyncPagesSincePush = 0;
+
+  saveProgressBeforeRestart();
+  auto syncActivity = makeUniqueNoThrow<KOReaderSyncActivity>(renderer, mappedInput, epub->getPath(),
+                                                              KOREADER_STORE.getMatchMethod(), SETTINGS.orientation,
+                                                              /*autoPush=*/true, /*returnToReaderAfterPush=*/true);
+  if (!syncActivity) {
+    LOG_ERR("KOSync", "Background push OOM (free=%u maxAlloc=%u); skipping", ESP.getFreeHeap(), ESP.getMaxAllocHeap());
+    return false;
+  }
+  pauseReadingPaceTimer("background_ko_push");
+  activityManager.replaceActivity(std::move(syncActivity));
+  return true;
 }
 
 bool EpubReaderActivity::tryAutoPushOnClose() {

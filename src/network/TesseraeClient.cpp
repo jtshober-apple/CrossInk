@@ -19,6 +19,7 @@
 #include "CrossPointSettings.h"
 #include "WifiCredentialStore.h"
 #include "network/WifiUtils.h"
+#include "util/RtcMinutes.h"
 
 namespace {
 constexpr const char* TAG = "TESS";
@@ -117,25 +118,9 @@ int postJson(const std::string& url, const std::string& body, bool withToken, st
 constexpr const char* FETCH_STAMP_PATH = "/.crosspoint/tesserae_fetched";
 constexpr int64_t STALE_AFTER_MINUTES = 24 * 60;
 
-// Minutes since 1970 according to the RTC fields. Only differences are used, so the RTC holding local time
-// rather than UTC does not matter.
-bool rtcMinutes(int64_t& out) {
-  uint16_t year = 0;
-  uint8_t month = 0, day = 0, hour = 0, minute = 0;
-  if (!halClock.isAvailable() || !halClock.getDateTime(year, month, day, hour, minute) || year < 2024) return false;
-  const int y = static_cast<int>(year) - (month <= 2 ? 1 : 0);
-  const int era = y / 400;
-  const int yoe = y - era * 400;
-  const int doy = (153 * (month + (month > 2 ? -3 : 9)) + 2) / 5 + day - 1;
-  const int doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-  const int64_t days = static_cast<int64_t>(era) * 146097 + doe - 719468;
-  out = days * 1440 + hour * 60 + minute;
-  return true;
-}
-
 void stampFetchTime() {
   int64_t now = 0;
-  if (!rtcMinutes(now)) return;
+  if (!rtcMinutesSinceEpoch(now)) return;
   FsFile file;
   if (!Storage.openFileForWrite("TESS", FETCH_STAMP_PATH, file)) return;
   char buf[24];
@@ -436,7 +421,7 @@ TesseraeClient::Error TesseraeClient::refreshBeforeSleep() {
 
 bool TesseraeClient::frameIsStale() {
   int64_t now = 0;
-  if (!rtcMinutes(now)) return false;
+  if (!rtcMinutesSinceEpoch(now)) return false;
   FsFile file;
   if (!Storage.openFileForRead("TESS", FETCH_STAMP_PATH, file)) return true;
   char buf[24] = {};

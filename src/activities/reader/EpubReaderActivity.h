@@ -305,6 +305,10 @@ class EpubReaderActivity final : public Activity {
   int lastSavedPage = -1;
   int lastSavedPageCount = -1;
   ReaderProgressSaveDebouncer progressSaveDebouncer;
+  // Debounced KoSync push: pages turned since the last push and when the reader last moved.
+  uint32_t koSyncLastPositionKey = 0xFFFFFFFFu;
+  uint32_t koSyncPagesSincePush = 0;
+  unsigned long koSyncLastTurnMs = 0;
   bool progressSaveRequiredAfterRelayout = false;
   // Adapted from Sichroteph/YACP commit 3f3c5fc42e794c021edb9832856ef98c2d2065b9
   // (MIT): retain one render-only strip instead of reallocating it on every
@@ -383,6 +387,10 @@ class EpubReaderActivity final : public Activity {
   // Returns true when the auto-push activity was launched (caller must return immediately).
   // Returns false when auto-push is disabled/unavailable; caller should call onGoHome().
   bool tryAutoPushOnClose();
+  // Debounced background KoSync push while reading (see koSyncPushIdleSec / koSyncPushPages). Returns true when the
+  // push activity was launched and the caller must return immediately.
+  bool maybeBackgroundKoSyncPush();
+  void noteKoSyncPageTurn(uint32_t positionKey);
   bool saveReadingProgress();
   bool saveLinkStack() const;
   void loadLinkStack();

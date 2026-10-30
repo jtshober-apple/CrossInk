@@ -691,6 +691,10 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   char deviceName[21] = "";
   // When true, automatically push local progress to KOReader sync server on book close, then return home.
   uint8_t koSyncAutoPushOnClose = 0;
+  // Debounced background push while reading: after this many seconds without a page turn, or after this many
+  // pages turned (once reading pauses for a few seconds), upload progress. 0 disables that trigger.
+  uint8_t koSyncPushIdleSec = 60;
+  uint8_t koSyncPushPages = 30;
   // Quick Resume: keep current content visible with moon icon instead of showing a static sleep screen.
   uint8_t quickResumeSleepScreen = QUICK_RESUME_NEVER;
   // Tesserae dashboard integration. tessServerUrl: base URL like http://192.168.1.x:8765

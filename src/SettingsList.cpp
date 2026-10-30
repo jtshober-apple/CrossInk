@@ -328,6 +328,10 @@ const std::vector<SettingInfo>& getBaseSettingsList() {
     // --- Tesserae ---
     add(SettingInfo::String(StrId::STR_TESSERAE_SERVER_URL, SETTINGS.tessServerUrl, sizeof(SETTINGS.tessServerUrl),
                             "tessServerUrl", StrId::STR_TESSERAE));
+    add(SettingInfo::Value(StrId::STR_KO_PUSH_IDLE_SEC, &CrossPointSettings::koSyncPushIdleSec, {0, 240, 15},
+                           "koSyncPushIdleSec", StrId::STR_KOREADER_SYNC));
+    add(SettingInfo::Value(StrId::STR_KO_PUSH_PAGES, &CrossPointSettings::koSyncPushPages, {0, 100, 5},
+                           "koSyncPushPages", StrId::STR_KOREADER_SYNC));
     add(SettingInfo::Value(StrId::STR_TESSERAE_AUTO_REFRESH, &CrossPointSettings::tessAutoRefreshMin, {0, 240, 15},
                            "tessAutoRefreshMin", StrId::STR_TESSERAE));
     // tessDeviceId, tessDeviceToken, tessEtag are managed internally; expose via their own activity.

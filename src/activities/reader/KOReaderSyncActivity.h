@@ -54,10 +54,13 @@ class KOReaderSyncActivity final : public Activity {
         readerOrientation(readerOrientation) {}
 
   // Auto-push constructor: silently uploads local progress to KOReader sync
-  // server when the user closes a book, then reboots to the home screen.
+  // server when the user closes a book, then reboots to the home screen. With
+  // returnToReaderAfterPush (the debounced push fired while reading) it reboots
+  // back into the open book instead.
   // Never shows interactive UI; silently swallows network or credential errors.
   explicit KOReaderSyncActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::string epubPath,
-                                DocumentMatchMethod matchMethod, const uint8_t readerOrientation, bool /*autoPush*/)
+                                DocumentMatchMethod matchMethod, const uint8_t readerOrientation, bool /*autoPush*/,
+                                bool returnToReaderAfterPush = false)
       : Activity(NAME, renderer, mappedInput),
         epubPath(std::move(epubPath)),
         currentSpineIndex(0),
@@ -70,7 +73,8 @@ class KOReaderSyncActivity final : public Activity {
         localProgress{},
         localProgressDeferred(true),
         readerOrientation(readerOrientation),
-        autoPushMode(true) {}
+        autoPushMode(true),
+        returnToReaderAfterPush(returnToReaderAfterPush) {}
 
   void onEnter() override;
   void onExit() override;
@@ -133,6 +137,8 @@ class KOReaderSyncActivity final : public Activity {
   // When true: upload-only, no UI shown, go home (not back to reader) on completion
   // or any error. Set by the auto-push constructor; never changed after construction.
   bool autoPushMode = false;
+  // Auto-push only: reboot back into the book rather than home when finished.
+  bool returnToReaderAfterPush = false;
 
   // Tracks whether this session activated WiFi. Set in onEnter past the credentials
   // check; checked in onExit to decide whether to silent-reboot. Can't rely on
@@ -153,4 +159,5 @@ class KOReaderSyncActivity final : public Activity {
   bool ensureLocalProgressLoaded();
   void saveProgressAndReturn(const CrossPointPosition& position);
   void returnToReader();
+  void finishAutoPush();
 };

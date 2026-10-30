@@ -251,6 +251,15 @@ void KOReaderSyncActivity::saveProgressAndReturn(const CrossPointPosition& posit
   returnToReader();
 }
 
+void KOReaderSyncActivity::finishAutoPush() {
+  // A background push fired mid-read resumes the book; an on-close push goes home.
+  if (returnToReaderAfterPush) {
+    silentRestartToReader(true);
+  } else {
+    silentRestart();
+  }
+}
+
 void KOReaderSyncActivity::returnToReader() { activityManager.goToReader(epubPath, false, false, true); }
 
 bool KOReaderSyncActivity::consumeInitialConfirmRelease() {
@@ -413,7 +422,7 @@ void KOReaderSyncActivity::performSync() {
               KOReaderSyncClient::errorString(result));
       wifiActivated = false;
       wifiOff();
-      silentRestart();
+      finishAutoPush();
       return;
     }
     {
@@ -536,7 +545,7 @@ void KOReaderSyncActivity::performSync() {
         LOG_DBG("KOSync", "Auto-push: progress equal, returning home");
         wifiActivated = false;
         wifiOff();
-        silentRestart();
+        finishAutoPush();
         return;
       }
       completeAlreadySynced();
@@ -556,7 +565,7 @@ void KOReaderSyncActivity::performSync() {
               remoteProgress.percentage, localProgress.percentage);
       wifiActivated = false;
       wifiOff();
-      silentRestart();
+      finishAutoPush();
       return;
     }
 
@@ -670,7 +679,7 @@ void KOReaderSyncActivity::performUpload() {
     LOG_DBG("KOSync", "Auto-push: upload complete, returning home");
     wifiActivated = false;
     wifiOff();
-    silentRestart();
+    finishAutoPush();
     return;
   }
   {
@@ -730,7 +739,7 @@ void KOReaderSyncActivity::onEnter() {
     if (autoPushMode) {
       // No credentials; nothing to push. Exit silently to home.
       LOG_DBG("KOSync", "Auto-push: no credentials, returning home");
-      silentRestart();
+      finishAutoPush();
       return;
     }
     state = NO_CREDENTIALS;
@@ -765,7 +774,7 @@ void KOReaderSyncActivity::onExit() {
   if (wifiActivated) {
     wifiOff();
     if (autoPushMode) {
-      silentRestart();
+      finishAutoPush();
     } else {
       silentRestartToReader(true);
     }
@@ -922,7 +931,7 @@ void KOReaderSyncActivity::loop() {
       if (autoPushMode) {
         wifiActivated = false;
         wifiOff();
-        silentRestart();
+        finishAutoPush();
       } else {
         returnToReader();
       }
