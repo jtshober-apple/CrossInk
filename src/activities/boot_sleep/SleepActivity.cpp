@@ -1028,14 +1028,28 @@ void SleepActivity::renderDashboardSleepScreen() const {
 void SleepActivity::renderTesseraeSleepScreen() const {
   // The X4 Pro/Classic skip the "Entering sleep" popup, which was fine while sleeping was instant. The refresh
   // below takes seconds, so say what is happening instead of looking frozen.
-  if ((BoardConfig::isX4Pro() || CROSSINK_APP_DEVICE_X4CLASSIC) && SETTINGS.tessServerUrl[0] != '\0') {
-    if (APP_STATE.lastSleepFromReader) renderer.setOrientation(sleepPopupOrientation);
-    GUI.drawPopup(renderer, tr(TesseraeClient::isTimedWake() ? STR_UPDATING_DISPLAY : STR_ENTERING_SLEEP));
+  // Walk through the steps on screen: each one replaces the previous popup, which can be wider than the next.
+  const bool showSteps = (BoardConfig::isX4Pro() || CROSSINK_APP_DEVICE_X4CLASSIC) && SETTINGS.tessServerUrl[0] != '\0';
+  if (showSteps) {
+    const bool fromReader = APP_STATE.lastSleepFromReader;
+    const auto popupOrientation = sleepPopupOrientation;
+    if (fromReader) renderer.setOrientation(popupOrientation);
+    Rect last = GUI.drawPopup(renderer, tr(TesseraeClient::isTimedWake() ? STR_UPDATING_DISPLAY : STR_ENTERING_SLEEP));
     renderer.setOrientation(GfxRenderer::Orientation::Portrait);
+    TesseraeClient::setStepListener([this, &last, fromReader, popupOrientation](const char* text) {
+      if (fromReader) renderer.setOrientation(popupOrientation);
+      constexpr int kPad = 8;  // popup frame plus a little slack
+      renderer.fillRect(last.x - kPad, last.y - kPad, last.width + kPad * 2, last.height + kPad * 2, false);
+      last = GUI.drawPopup(renderer, text);
+      renderer.setOrientation(GfxRenderer::Orientation::Portrait);
+    });
   }
 
   // Pull the freshest dashboard before drawing; on any failure the cached frame below is used.
   TesseraeClient::refreshBeforeSleep();
+  if (showSteps) {
+    TesseraeClient::setStepListener(nullptr);
+  }
   tesseraeFrameStale = TesseraeClient::frameIsStale();
 
   FsFile file;

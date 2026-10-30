@@ -4,6 +4,7 @@
 #include <ArduinoJson.h>
 #include <HalClock.h>
 #include <HalStorage.h>
+#include <I18n.h>
 #include <Logging.h>
 #include <Memory.h>
 #include <SecureHttpClient.h>
@@ -378,6 +379,11 @@ TesseraeClient::Error TesseraeClient::sendHeartbeat(uint16_t* nextPollSeconds) {
 namespace {
 bool refreshedThisBoot = false;
 bool timedWakeRender = false;
+std::function<void(const char*)> stepListener;
+
+void notifyStep(const char* text) {
+  if (stepListener) stepListener(text);
+}
 }  // namespace
 
 bool TesseraeClient::joinSavedWifi() { return connectSavedWifi(); }
@@ -386,6 +392,7 @@ void TesseraeClient::leaveWifi() { wifiOff(); }
 void TesseraeClient::markRefreshed() { refreshedThisBoot = true; }
 void TesseraeClient::setTimedWake(const bool v) { timedWakeRender = v; }
 bool TesseraeClient::isTimedWake() { return timedWakeRender; }
+void TesseraeClient::setStepListener(std::function<void(const char*)> listener) { stepListener = std::move(listener); }
 
 TesseraeClient::Error TesseraeClient::refreshBeforeSleep(const bool timedWake) {
   if (SETTINGS.tessServerUrl[0] == '\0') return NOT_CONFIGURED;
@@ -401,6 +408,7 @@ TesseraeClient::Error TesseraeClient::refreshBeforeSleep(const bool timedWake) {
   }
 
   const bool alreadyConnected = hasActiveStationWifiConnection();
+  if (!alreadyConnected) notifyStep(tr(STR_STEP_CONNECTING));
   if (!alreadyConnected && !connectSavedWifi()) {
     wifiOff();
     return NETWORK_ERROR;
@@ -411,13 +419,19 @@ TesseraeClient::Error TesseraeClient::refreshBeforeSleep(const bool timedWake) {
   // the frame fetched below already shows this reading position. Going to sleep only pushes (the reader is the
   // newest source); a timed wake also pulls, so a book read or listened to elsewhere reaches this reader.
   bool pushed = false;
+  const bool syncing = SETTINGS.koSyncPushOnSleep || (timedWake && SETTINGS.koSyncPullOnWake);
+  if (syncing) notifyStep(tr(timedWake ? STR_STEP_SYNCING : STR_STEP_UPLOADING));
   if (SETTINGS.koSyncPushOnSleep || (timedWake && SETTINGS.koSyncPullOnWake)) {
     const auto synced = KoSyncQuiet::syncBoth(APP_STATE.openEpubPath, SETTINGS.koSyncPushOnSleep != 0,
                                               timedWake && SETTINGS.koSyncPullOnWake != 0);
     LOG_INF(TAG, "refresh: kosync result=%d (timedWake=%d)", static_cast<int>(synced), timedWake);
     pushed = synced == KoSyncQuiet::Result::PUSHED;
   }
-  if (pushed) delay(RELAY_SETTLE_MS);
+  if (pushed) {
+    notifyStep(tr(STR_STEP_WAITING));
+    delay(RELAY_SETTLE_MS);
+  }
+  notifyStep(tr(STR_STEP_FETCHING));
 
   Error err = OK;
   if (SETTINGS.tessDeviceToken[0] == '\0') {
@@ -438,6 +452,7 @@ TesseraeClient::Error TesseraeClient::refreshBeforeSleep(const bool timedWake) {
     }
   }
 
+  notifyStep(tr(STR_ENTERING_SLEEP));
   if (!alreadyConnected) wifiOff();
   return err;
 }

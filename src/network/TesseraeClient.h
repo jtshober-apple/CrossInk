@@ -92,6 +92,8 @@ class TesseraeClient {
   // True while a timed wake redraws the dashboard (the sleep screen then says "Updating display").
   static void setTimedWake(bool timedWake);
   static bool isTimedWake();
+  // Called with a short status line as refreshBeforeSleep() moves through its steps (the sleep screen shows it).
+  static void setStepListener(std::function<void(const char*)> listener);
 
  private:
   TesseraeClient() = delete;
