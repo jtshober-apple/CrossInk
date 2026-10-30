@@ -79,6 +79,7 @@
 #include "util/BookCacheUtils.h"
 #include "util/BookMoveUtils.h"
 #include "util/Dictionary.h"
+#include "util/KoSyncPullStamp.h"
 #include "util/RtcMinutes.h"
 #include "util/ScreenshotUtil.h"
 
@@ -2823,6 +2824,7 @@ void EpubReaderActivity::loop() {
     finish();
     return;
   }
+  if (maybePullKoSyncOnOpen()) return;
   if (!rawReaderInput && maybeBackgroundKoSyncPush()) return;
 
 #if CROSSINK_APP_CAP_TOUCH
@@ -8308,6 +8310,29 @@ void EpubReaderActivity::saveProgressBeforeRestart() {
   }
 }
 
+bool EpubReaderActivity::maybePullKoSyncOnOpen() {
+  if (koSyncOpenChecked) return false;
+  koSyncOpenChecked = true;
+  if (!SETTINGS.koSyncPullOnOpen || !KOREADER_STORE.hasCredentials() || !epub) return false;
+  if (KoSyncPullStamp::recentlyChecked(epub->getPath())) return false;
+
+  // Same handoff as the reader menu's Sync action: the sync activity reboots into the network boot, compares with
+  // the server, applies a further-ahead remote position (or asks, per the sync behaviour setting), and comes back.
+  if (!saveReadingProgress()) {
+    LOG_ERR("KOSync", "Skipping pull on open: current progress could not be saved");
+    return false;
+  }
+  auto restartActivity = makeUniqueNoThrow<KOReaderSyncActivity>(renderer, mappedInput, SETTINGS.orientation);
+  if (!restartActivity) {
+    LOG_ERR("KOSync", "Pull on open OOM (free=%u maxAlloc=%u); skipping", ESP.getFreeHeap(), ESP.getMaxAllocHeap());
+    return false;
+  }
+  KoSyncPullStamp::mark(epub->getPath());
+  pauseReadingPaceTimer("pull_on_open");
+  activityManager.replaceActivity(std::move(restartActivity));
+  return true;
+}
+
 void EpubReaderActivity::noteKoSyncPageTurn(const uint32_t positionKey) {
   if (positionKey == koSyncLastPositionKey) return;
   // The first position seen after opening the book is the resume point, not a page turn.
@@ -8360,6 +8385,7 @@ bool EpubReaderActivity::maybeBackgroundKoSyncPush() {
     }
   }
   koSyncPagesSincePush = 0;
+  KoSyncPullStamp::mark(epub->getPath());
 
   saveProgressBeforeRestart();
   auto syncActivity = makeUniqueNoThrow<KOReaderSyncActivity>(renderer, mappedInput, epub->getPath(),

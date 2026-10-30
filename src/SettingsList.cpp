@@ -328,6 +328,8 @@ const std::vector<SettingInfo>& getBaseSettingsList() {
     // --- Tesserae ---
     add(SettingInfo::String(StrId::STR_TESSERAE_SERVER_URL, SETTINGS.tessServerUrl, sizeof(SETTINGS.tessServerUrl),
                             "tessServerUrl", StrId::STR_TESSERAE));
+    add(SettingInfo::Toggle(StrId::STR_KO_PULL_ON_OPEN, &CrossPointSettings::koSyncPullOnOpen, "koSyncPullOnOpen",
+                            StrId::STR_KOREADER_SYNC));
     add(SettingInfo::Value(StrId::STR_KO_PUSH_IDLE_SEC, &CrossPointSettings::koSyncPushIdleSec, {0, 240, 15},
                            "koSyncPushIdleSec", StrId::STR_KOREADER_SYNC));
     add(SettingInfo::Value(StrId::STR_KO_PUSH_PAGES, &CrossPointSettings::koSyncPushPages, {0, 100, 5},

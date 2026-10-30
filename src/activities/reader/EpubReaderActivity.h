@@ -308,6 +308,7 @@ class EpubReaderActivity final : public Activity {
   // Debounced KoSync push: pages turned since the last push and when the reader last moved.
   uint32_t koSyncLastPositionKey = 0xFFFFFFFFu;
   uint32_t koSyncPagesSincePush = 0;
+  bool koSyncOpenChecked = false;
   unsigned long koSyncLastTurnMs = 0;
   bool progressSaveRequiredAfterRelayout = false;
   // Adapted from Sichroteph/YACP commit 3f3c5fc42e794c021edb9832856ef98c2d2065b9
@@ -391,6 +392,8 @@ class EpubReaderActivity final : public Activity {
   // push activity was launched and the caller must return immediately.
   bool maybeBackgroundKoSyncPush();
   void noteKoSyncPageTurn(uint32_t positionKey);
+  // Once per reader session: hand off to KoSync to check the server position before reading (see koSyncPullOnOpen).
+  bool maybePullKoSyncOnOpen();
   bool saveReadingProgress();
   bool saveLinkStack() const;
   void loadLinkStack();

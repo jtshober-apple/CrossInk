@@ -1064,6 +1064,7 @@ inline std::vector<SettingInfo> buildSystemDeviceSettingsList(const std::vector<
   settings.push_back(SettingInfo::Action(StrId::STR_LANGUAGE, SettingAction::Language));
   settings.push_back(SettingInfo::Action(StrId::STR_KEYBOARD_LAYOUTS, SettingAction::KeyboardLayouts));
   if (halClock.isAvailable()) {
+    addSettingByName(settings, allSettings, StrId::STR_KO_PULL_ON_OPEN);
     addSettingByName(settings, allSettings, StrId::STR_KO_PUSH_IDLE_SEC);
     addSettingByName(settings, allSettings, StrId::STR_KO_PUSH_PAGES);
     addSettingByName(settings, allSettings, StrId::STR_TESSERAE_AUTO_REFRESH);

@@ -693,6 +693,8 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t koSyncAutoPushOnClose = 0;
   // Debounced background push while reading: after this many seconds without a page turn, or after this many
   // pages turned (once reading pauses for a few seconds), upload progress. 0 disables that trigger.
+  // Check the server position when a book is opened (pulls if the server is ahead, per the sync behaviour setting).
+  uint8_t koSyncPullOnOpen = 1;
   uint8_t koSyncPushIdleSec = 60;
   uint8_t koSyncPushPages = 30;
   // Quick Resume: keep current content visible with moon icon instead of showing a static sleep screen.
