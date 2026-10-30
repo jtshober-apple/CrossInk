@@ -1034,7 +1034,8 @@ void SleepActivity::renderTesseraeSleepScreen() const {
     const bool fromReader = APP_STATE.lastSleepFromReader;
     const auto popupOrientation = sleepPopupOrientation;
     if (fromReader) renderer.setOrientation(popupOrientation);
-    Rect last = GUI.drawPopup(renderer, tr(TesseraeClient::isTimedWake() ? STR_UPDATING_DISPLAY : STR_ENTERING_SLEEP));
+    Rect last =
+        GUI.drawPopup(renderer, (TesseraeClient::isTimedWake() ? tr(STR_UPDATING_DISPLAY) : tr(STR_ENTERING_SLEEP)));
     renderer.setOrientation(GfxRenderer::Orientation::Portrait);
     TesseraeClient::setStepListener([this, &last, fromReader, popupOrientation](const char* text) {
       if (fromReader) renderer.setOrientation(popupOrientation);

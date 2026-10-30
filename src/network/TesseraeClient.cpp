@@ -420,7 +420,7 @@ TesseraeClient::Error TesseraeClient::refreshBeforeSleep(const bool timedWake) {
   // newest source); a timed wake also pulls, so a book read or listened to elsewhere reaches this reader.
   bool pushed = false;
   const bool syncing = SETTINGS.koSyncPushOnSleep || (timedWake && SETTINGS.koSyncPullOnWake);
-  if (syncing) notifyStep(tr(timedWake ? STR_STEP_SYNCING : STR_STEP_UPLOADING));
+  if (syncing) notifyStep((timedWake ? tr(STR_STEP_SYNCING) : tr(STR_STEP_UPLOADING)));
   if (SETTINGS.koSyncPushOnSleep || (timedWake && SETTINGS.koSyncPullOnWake)) {
     const auto synced = KoSyncQuiet::syncBoth(APP_STATE.openEpubPath, SETTINGS.koSyncPushOnSleep != 0,
                                               timedWake && SETTINGS.koSyncPullOnWake != 0);
