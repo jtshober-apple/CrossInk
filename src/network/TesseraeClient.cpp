@@ -378,7 +378,7 @@ TesseraeClient::Error TesseraeClient::sendHeartbeat(uint16_t* nextPollSeconds) {
 namespace {
 bool refreshedThisBoot = false;
 bool timedWakeRender = false;
-}
+}  // namespace
 
 bool TesseraeClient::joinSavedWifi() { return connectSavedWifi(); }
 void TesseraeClient::leaveWifi() { wifiOff(); }
