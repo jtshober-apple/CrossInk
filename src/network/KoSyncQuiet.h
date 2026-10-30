@@ -10,11 +10,11 @@
 namespace KoSyncQuiet {
 
 enum class Result {
-  PUSHED,        // server was behind: uploaded the local position
-  PULLED,        // server was ahead: wrote its position into the book's progress file
-  IN_SYNC,       // positions match (or the other side is ahead and this direction does not move it)
-  SKIPPED,       // not configured, no open EPUB, or not enough memory
-  FAILED,        // network, server or mapping error
+  PUSHED,   // server was behind: uploaded the local position
+  PULLED,   // server was ahead: wrote its position into the book's progress file
+  IN_SYNC,  // positions match (or the other side is ahead and this direction does not move it)
+  SKIPPED,  // not configured, no open EPUB, or not enough memory
+  FAILED,   // network, server or mapping error
 };
 
 /** Upload the open book's position when the server is behind it. */
