@@ -330,6 +330,10 @@ const std::vector<SettingInfo>& getBaseSettingsList() {
                             "tessServerUrl", StrId::STR_TESSERAE));
     add(SettingInfo::Toggle(StrId::STR_KO_PULL_ON_OPEN, &CrossPointSettings::koSyncPullOnOpen, "koSyncPullOnOpen",
                             StrId::STR_KOREADER_SYNC));
+    add(SettingInfo::Toggle(StrId::STR_KO_PUSH_ON_SLEEP, &CrossPointSettings::koSyncPushOnSleep, "koSyncPushOnSleep",
+                            StrId::STR_KOREADER_SYNC));
+    add(SettingInfo::Toggle(StrId::STR_KO_PULL_ON_WAKE, &CrossPointSettings::koSyncPullOnWake, "koSyncPullOnWake",
+                            StrId::STR_KOREADER_SYNC));
     add(SettingInfo::Value(StrId::STR_KO_PUSH_IDLE_SEC, &CrossPointSettings::koSyncPushIdleSec, {0, 240, 15},
                            "koSyncPushIdleSec", StrId::STR_KOREADER_SYNC));
     add(SettingInfo::Value(StrId::STR_KO_PUSH_PAGES, &CrossPointSettings::koSyncPushPages, {0, 100, 5},

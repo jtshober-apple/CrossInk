@@ -107,6 +107,7 @@ inline esp_sleep_wakeup_cause_t esp_sleep_get_wakeup_cause() { return ESP_SLEEP_
 #include "components/UITheme.h"
 #include "components/icons/tablerFilledIcons.h"
 #include "fontIds.h"
+#include "network/KoSyncQuiet.h"
 #include "network/TesseraeClient.h"
 #include "network/UsbSerialFileTransfer.h"
 #ifdef SIMULATOR
@@ -1395,6 +1396,9 @@ void setup() {
   BatteryDiagnosticLog::record(BatteryDiagnosticLog::Event::Wake, BoardConfig::ACTIVE.name,
                                wakeupRouteName(wakeupReason));
   const bool isSleepWake = wakeupReason == HalGPIO::WakeupReason::PowerButton;
+  // Quiet pull: the previous sleep screen stays up while the radio fetches the server position, and the book then
+  // opens at the right page. A failure is reported by the reader as a toast.
+  if (isSleepWake && !isSilentReboot) KoSyncQuiet::pullOnWake();
   I18N.setLanguage(static_cast<Language>(SETTINGS.language));
   // Normal boot store deferral adapted from Sichroteph/YACP commit
   // 20af8aee8d3e1d560456753b08d1f52e5488621f (MIT). Accessors load these

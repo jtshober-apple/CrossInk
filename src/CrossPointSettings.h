@@ -694,9 +694,13 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // Debounced background push while reading: after this many seconds without a page turn, or after this many
   // pages turned (once reading pauses for a few seconds), upload progress. 0 disables that trigger.
   // Check the server position when a book is opened (pulls if the server is ahead, per the sync behaviour setting).
-  uint8_t koSyncPullOnOpen = 1;
-  uint8_t koSyncPushIdleSec = 60;
-  uint8_t koSyncPushPages = 30;
+  uint8_t koSyncPullOnOpen = 0;
+  // Quiet sync on moments the radio is already up: push when going to sleep (alongside the Tesserae dashboard
+  // refresh), pull at power-button wake before the book opens.
+  uint8_t koSyncPushOnSleep = 1;
+  uint8_t koSyncPullOnWake = 1;
+  uint8_t koSyncPushIdleSec = 0;
+  uint8_t koSyncPushPages = 0;
   // Quick Resume: keep current content visible with moon icon instead of showing a static sleep screen.
   uint8_t quickResumeSleepScreen = QUICK_RESUME_NEVER;
   // Tesserae dashboard integration. tessServerUrl: base URL like http://192.168.1.x:8765

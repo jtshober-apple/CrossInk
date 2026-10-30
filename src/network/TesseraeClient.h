@@ -45,6 +45,10 @@ class TesseraeClient {
    */
   static bool frameIsStale();
 
+  /** Blocking join of the saved Wi-Fi network (10 s timeout). Pair with leaveWifi(). */
+  static bool joinSavedWifi();
+  static void leaveWifi();
+
   /** Convert an error code to a short English string for logging. */
   static const char* errorString(Error error);
 

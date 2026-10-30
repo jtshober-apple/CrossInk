@@ -76,6 +76,7 @@
 #include "components/TouchHeaderBackButton.h"
 #endif
 #include "fontIds.h"
+#include "network/KoSyncQuiet.h"
 #include "util/BookCacheUtils.h"
 #include "util/BookMoveUtils.h"
 #include "util/Dictionary.h"
@@ -8313,6 +8314,11 @@ void EpubReaderActivity::saveProgressBeforeRestart() {
 bool EpubReaderActivity::maybePullKoSyncOnOpen() {
   if (koSyncOpenChecked) return false;
   koSyncOpenChecked = true;
+  if (KoSyncQuiet::consumeWakePullFailure()) {
+    drawToast(renderer, tr(STR_KO_WAKE_PULL_FAILED));
+    delay(1500);
+    requestUpdate();
+  }
   if (!SETTINGS.koSyncPullOnOpen || !KOREADER_STORE.hasCredentials() || !epub) return false;
   if (KoSyncPullStamp::recentlyChecked(epub->getPath())) return false;
 

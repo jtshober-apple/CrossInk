@@ -1063,6 +1063,8 @@ inline std::vector<SettingInfo> buildSystemDeviceSettingsList(const std::vector<
   addSettingByName(settings, allSettings, StrId::STR_CUSTOM_BOOTSCREEN);
   settings.push_back(SettingInfo::Action(StrId::STR_LANGUAGE, SettingAction::Language));
   settings.push_back(SettingInfo::Action(StrId::STR_KEYBOARD_LAYOUTS, SettingAction::KeyboardLayouts));
+  addSettingByName(settings, allSettings, StrId::STR_KO_PUSH_ON_SLEEP);
+  addSettingByName(settings, allSettings, StrId::STR_KO_PULL_ON_WAKE);
   addSettingByName(settings, allSettings, StrId::STR_KO_PULL_ON_OPEN);
   addSettingByName(settings, allSettings, StrId::STR_KO_PUSH_IDLE_SEC);
   addSettingByName(settings, allSettings, StrId::STR_KO_PUSH_PAGES);

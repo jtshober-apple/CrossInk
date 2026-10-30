@@ -17,7 +17,9 @@
 #include <string>
 
 #include "CrossPointSettings.h"
+#include "CrossPointState.h"
 #include "WifiCredentialStore.h"
+#include "network/KoSyncQuiet.h"
 #include "network/WifiUtils.h"
 #include "util/RtcMinutes.h"
 
@@ -375,6 +377,9 @@ namespace {
 bool refreshedThisBoot = false;
 }
 
+bool TesseraeClient::joinSavedWifi() { return connectSavedWifi(); }
+void TesseraeClient::leaveWifi() { wifiOff(); }
+
 void TesseraeClient::markRefreshed() { refreshedThisBoot = true; }
 
 TesseraeClient::Error TesseraeClient::refreshBeforeSleep() {
@@ -413,6 +418,12 @@ TesseraeClient::Error TesseraeClient::refreshBeforeSleep() {
       uint16_t nextPollSeconds = 0;
       sendHeartbeat(&nextPollSeconds);
     }
+  }
+
+  // The radio is up and the reader is closed: push the open book's position now instead of reconnecting later.
+  if (SETTINGS.koSyncPushOnSleep && hasActiveStationWifiConnection()) {
+    const auto pushed = KoSyncQuiet::pushIfAhead(APP_STATE.openEpubPath);
+    LOG_INF(TAG, "sleep refresh: kosync push result=%d", static_cast<int>(pushed));
   }
 
   if (!alreadyConnected) wifiOff();
