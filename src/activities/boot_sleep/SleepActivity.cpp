@@ -1007,7 +1007,7 @@ void SleepActivity::renderTesseraeSleepScreen() const {
   // below takes seconds, so say what is happening instead of looking frozen.
   if ((BoardConfig::isX4Pro() || CROSSINK_APP_DEVICE_X4CLASSIC) && SETTINGS.tessServerUrl[0] != '\0') {
     if (APP_STATE.lastSleepFromReader) renderer.setOrientation(sleepPopupOrientation);
-    GUI.drawPopup(renderer, tr(STR_TESSERAE_SYNCING));
+    GUI.drawPopup(renderer, tr(STR_ENTERING_SLEEP));
     renderer.setOrientation(GfxRenderer::Orientation::Portrait);
   }
 
