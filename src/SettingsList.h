@@ -1063,11 +1063,11 @@ inline std::vector<SettingInfo> buildSystemDeviceSettingsList(const std::vector<
   addSettingByName(settings, allSettings, StrId::STR_CUSTOM_BOOTSCREEN);
   settings.push_back(SettingInfo::Action(StrId::STR_LANGUAGE, SettingAction::Language));
   settings.push_back(SettingInfo::Action(StrId::STR_KEYBOARD_LAYOUTS, SettingAction::KeyboardLayouts));
+  addSettingByName(settings, allSettings, StrId::STR_KO_PULL_ON_OPEN);
+  addSettingByName(settings, allSettings, StrId::STR_KO_PUSH_IDLE_SEC);
+  addSettingByName(settings, allSettings, StrId::STR_KO_PUSH_PAGES);
+  addSettingByName(settings, allSettings, StrId::STR_TESSERAE_AUTO_REFRESH);
   if (halClock.isAvailable()) {
-    addSettingByName(settings, allSettings, StrId::STR_KO_PULL_ON_OPEN);
-    addSettingByName(settings, allSettings, StrId::STR_KO_PUSH_IDLE_SEC);
-    addSettingByName(settings, allSettings, StrId::STR_KO_PUSH_PAGES);
-    addSettingByName(settings, allSettings, StrId::STR_TESSERAE_AUTO_REFRESH);
     addSettingByName(settings, allSettings, StrId::STR_CLOCK_FORMAT);
     addSettingByName(settings, allSettings, StrId::STR_CLOCK_UTC_OFFSET);
     addSettingByName(settings, allSettings, StrId::STR_DATE_FORMAT);

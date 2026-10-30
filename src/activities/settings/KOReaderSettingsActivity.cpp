@@ -20,11 +20,30 @@
 namespace fui = freeink::ui;
 
 namespace {
-constexpr int MENU_ITEMS = 9;
-const StrId menuNames[MENU_ITEMS] = {
-    StrId::STR_USERNAME,      StrId::STR_PASSWORD,      StrId::STR_SYNC_SERVER_URL,       StrId::STR_DOCUMENT_MATCHING,
-    StrId::STR_SEND_METADATA, StrId::STR_SYNC_BEHAVIOR, StrId::STR_KO_AUTO_PUSH_ON_CLOSE, StrId::STR_SIGN_UP,
-    StrId::STR_AUTHENTICATE};
+constexpr int MENU_ITEMS = 12;
+const StrId menuNames[MENU_ITEMS] = {StrId::STR_USERNAME,
+                                     StrId::STR_PASSWORD,
+                                     StrId::STR_SYNC_SERVER_URL,
+                                     StrId::STR_DOCUMENT_MATCHING,
+                                     StrId::STR_SEND_METADATA,
+                                     StrId::STR_SYNC_BEHAVIOR,
+                                     StrId::STR_KO_AUTO_PUSH_ON_CLOSE,
+                                     StrId::STR_KO_PULL_ON_OPEN,
+                                     StrId::STR_KO_PUSH_IDLE_SEC,
+                                     StrId::STR_KO_PUSH_PAGES,
+                                     StrId::STR_SIGN_UP,
+                                     StrId::STR_AUTHENTICATE};
+constexpr uint8_t kPushIdleChoices[] = {0, 15, 30, 60, 90, 120, 180, 240};
+constexpr uint8_t kPushPagesChoices[] = {0, 5, 10, 20, 30, 50, 100};
+
+// Next entry after `current` in the list, wrapping to the first.
+template <size_t N>
+uint8_t nextChoice(const uint8_t (&choices)[N], const uint8_t current) {
+  for (size_t i = 0; i < N; i++) {
+    if (choices[i] > current) return choices[i];
+  }
+  return choices[0];
+}
 constexpr fui::ActionId ACTION_ROW = 1;
 }  // namespace
 
@@ -172,12 +191,27 @@ void KOReaderSettingsActivity::handleSelection() {
     SETTINGS.saveToFile();
     requestUpdate();
   } else if (selectedIndex == 7) {
+    // Check server position when a book is opened - toggle on/off
+    SETTINGS.koSyncPullOnOpen = !SETTINGS.koSyncPullOnOpen;
+    SETTINGS.saveToFile();
+    requestUpdate();
+  } else if (selectedIndex == 8) {
+    // Debounced push: seconds without a page turn
+    SETTINGS.koSyncPushIdleSec = nextChoice(kPushIdleChoices, SETTINGS.koSyncPushIdleSec);
+    SETTINGS.saveToFile();
+    requestUpdate();
+  } else if (selectedIndex == 9) {
+    // Debounced push: pages turned
+    SETTINGS.koSyncPushPages = nextChoice(kPushPagesChoices, SETTINGS.koSyncPushPages);
+    SETTINGS.saveToFile();
+    requestUpdate();
+  } else if (selectedIndex == 10) {
     // Sign Up - create a new account on the sync server with the entered credentials
     if (!KOREADER_STORE.hasCredentials()) {
       return;
     }
     silentRestartToNetwork(NetworkBootTarget::KOREADER_AUTH, 1);
-  } else if (selectedIndex == 8) {
+  } else if (selectedIndex == 11) {
     // Authenticate
     if (!KOREADER_STORE.hasCredentials()) {
       // Can't authenticate without credentials - just show message briefly
@@ -223,8 +257,12 @@ void KOReaderSettingsActivity::buildListScreen(UiApp::ScreenType& screen) {
     } else if (i == 5) {
       values[i] =
           KOREADER_STORE.getSyncBehavior() == KOReaderSyncBehavior::SMART ? tr(STR_SMART_SYNC) : tr(STR_ASK_EVERY_TIME);
-    } else if (i == 6) {
-      // auto-push: rendered as a toggle, no text value needed
+    } else if (i == 6 || i == 7) {
+      // toggles: no text value needed
+    } else if (i == 8) {
+      values[i] = SETTINGS.koSyncPushIdleSec == 0 ? "Off" : std::to_string(SETTINGS.koSyncPushIdleSec) + " s";
+    } else if (i == 9) {
+      values[i] = SETTINGS.koSyncPushPages == 0 ? "Off" : std::to_string(SETTINGS.koSyncPushPages) + " pages";
     } else {
       values[i] = KOREADER_STORE.hasCredentials() ? "" : std::string("[") + tr(STR_SET_CREDENTIALS_FIRST) + "]";
     }
@@ -236,9 +274,10 @@ void KOReaderSettingsActivity::buildListScreen(UiApp::ScreenType& screen) {
     fui::ListItem item;
     item.label = I18N.get(menuNames[i]);
     if (!values[i].empty()) item.value = values[i].c_str();
-    item.toggle = (i == 4 || i == 6);
+    item.toggle = (i == 4 || i == 6 || i == 7);
     item.toggleChecked = (i == 4)   ? KOREADER_STORE.getSendMetadata()
                          : (i == 6) ? SETTINGS.koSyncAutoPushOnClose
+                         : (i == 7) ? SETTINGS.koSyncPullOnOpen
                                     : false;
     item.actionValue = static_cast<int16_t>(i);
     items.push_back(item);
