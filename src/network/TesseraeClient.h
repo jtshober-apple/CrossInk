@@ -89,6 +89,9 @@ class TesseraeClient {
 
   /** Make the next refreshBeforeSleep() a no-op: a timed wake has just fetched and cached the frame. */
   static void markRefreshed();
+  // True while a timed wake redraws the dashboard (the sleep screen then says "Updating display").
+  static void setTimedWake(bool timedWake);
+  static bool isTimedWake();
 
  private:
   TesseraeClient() = delete;

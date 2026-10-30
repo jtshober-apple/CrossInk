@@ -1216,6 +1216,7 @@ void setupDisplayAndFonts(const bool seamless, const bool loadReaderResources, c
 // where the reader was put to sleep.
 static void timedWakeRefreshAndResleep() {
   LOG_INF("BOOT", "Timed wake: refreshing Tesserae dashboard");
+  TesseraeClient::setTimedWake(true);
   const auto err = TesseraeClient::refreshBeforeSleep(/*timedWake=*/true);
   if (err == TesseraeClient::OK) {
     TesseraeClient::markRefreshed();  // SleepActivity must not fetch a second time
