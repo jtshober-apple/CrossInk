@@ -382,7 +382,7 @@ void TesseraeClient::leaveWifi() { wifiOff(); }
 
 void TesseraeClient::markRefreshed() { refreshedThisBoot = true; }
 
-TesseraeClient::Error TesseraeClient::refreshBeforeSleep() {
+TesseraeClient::Error TesseraeClient::refreshBeforeSleep(const bool timedWake) {
   if (SETTINGS.tessServerUrl[0] == '\0') return NOT_CONFIGURED;
   if (refreshedThisBoot) {
     refreshedThisBoot = false;
@@ -420,10 +420,13 @@ TesseraeClient::Error TesseraeClient::refreshBeforeSleep() {
     }
   }
 
-  // The radio is up and the reader is closed: push the open book's position now instead of reconnecting later.
-  if (SETTINGS.koSyncPushOnSleep && hasActiveStationWifiConnection()) {
-    const auto pushed = KoSyncQuiet::pushIfAhead(APP_STATE.openEpubPath);
-    LOG_INF(TAG, "sleep refresh: kosync push result=%d", static_cast<int>(pushed));
+  // The radio is up and the reader is closed, so sync the open book now instead of reconnecting later. Going to
+  // sleep only pushes (the reader is the newest source); a timed wake also pulls, so a book read or listened to
+  // elsewhere reaches this reader without anyone touching it.
+  if (hasActiveStationWifiConnection() && (SETTINGS.koSyncPushOnSleep || (timedWake && SETTINGS.koSyncPullOnWake))) {
+    const auto synced = KoSyncQuiet::syncBoth(APP_STATE.openEpubPath, SETTINGS.koSyncPushOnSleep != 0,
+                                              timedWake && SETTINGS.koSyncPullOnWake != 0);
+    LOG_INF(TAG, "refresh: kosync result=%d (timedWake=%d)", static_cast<int>(synced), timedWake);
   }
 
   if (!alreadyConnected) wifiOff();

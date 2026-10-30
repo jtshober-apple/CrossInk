@@ -17,6 +17,9 @@ enum class Result {
   FAILED,   // network, server or mapping error
 };
 
+/** One server check, then whichever direction is allowed and needed: upload when ahead, pull when behind. */
+Result syncBoth(const std::string& epubPath, bool allowPush, bool allowPull);
+
 /** Upload the open book's position when the server is behind it. */
 Result pushIfAhead(const std::string& epubPath);
 

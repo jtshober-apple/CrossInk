@@ -85,7 +85,7 @@ class TesseraeClient {
    * back off. Never blocks longer than the WiFi connect timeout plus the HTTP calls; on any
    * failure the previously cached frame stays in place.
    */
-  static Error refreshBeforeSleep();
+  static Error refreshBeforeSleep(bool timedWake = false);
 
   /** Make the next refreshBeforeSleep() a no-op: a timed wake has just fetched and cached the frame. */
   static void markRefreshed();

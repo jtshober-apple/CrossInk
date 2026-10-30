@@ -125,62 +125,60 @@ KoSyncQuiet::Result upload(const std::string& epubPath, const Local& l) {
 }
 }  // namespace
 
-namespace KoSyncQuiet {
-
-Result pushIfAhead(const std::string& epubPath) {
-  if (!usable(epubPath)) return Result::SKIPPED;
-  syncClockForTls();
-  Local local;
-  if (!loadLocal(epubPath, local)) return Result::FAILED;
-
-  KOReaderProgress remote;
-  const auto got = KOReaderSyncClient::getProgress(local.hash, remote);
-  if (got == KOReaderSyncClient::NOT_FOUND) return upload(epubPath, local);
-  if (got != KOReaderSyncClient::OK) {
-    LOG_ERR(TAG, "push: fetch remote failed: %s", KOReaderSyncClient::errorString(got).c_str());
-    return Result::FAILED;
-  }
-  if (local.ko.percentage - remote.percentage > SAME_PROGRESS_EPSILON) return upload(epubPath, local);
-  // Equal, or the server is ahead (a pull on wake handles that): the position the server holds counts as synced.
-  if (std::fabs(local.ko.percentage - remote.percentage) <= SAME_PROGRESS_EPSILON) {
-    KO_SYNC_STATUS.markSynced(epubPath, positionKey(local));
-  }
-  return Result::IN_SYNC;
-}
-
-Result pullIfBehind(const std::string& epubPath) {
-  if (!usable(epubPath)) return Result::SKIPPED;
-  syncClockForTls();
-  Local local;
-  if (!loadLocal(epubPath, local)) return Result::FAILED;
-
-  KOReaderProgress remote;
-  const auto got = KOReaderSyncClient::getProgress(local.hash, remote);
-  if (got == KOReaderSyncClient::NOT_FOUND) return Result::IN_SYNC;
-  if (got != KOReaderSyncClient::OK) {
-    LOG_ERR(TAG, "pull: fetch remote failed: %s", KOReaderSyncClient::errorString(got).c_str());
-    return Result::FAILED;
-  }
-  if (remote.percentage - local.ko.percentage <= SAME_PROGRESS_EPSILON) return Result::IN_SYNC;
-
+namespace {
+// Write the server's position into the book's progress file and record it as both the current and pushed position.
+KoSyncQuiet::Result applyRemote(const std::string& epubPath, const Local& local, const KOReaderProgress& remote) {
   const KOReaderPosition koPos = {remote.progress, remote.percentage};
   const CrossPointPosition target =
       ProgressMapper::toCrossPoint(local.epub, koPos, local.spine, local.pageCount, local.space);
-  if (!target.valid) return Result::FAILED;
+  if (!target.valid) return KoSyncQuiet::Result::FAILED;
 
   const int pageCount = std::max(target.totalPages, target.pageNumber + 1);
   const std::optional<uint32_t> offset =
       target.hasVisibleTextOffset ? std::optional<uint32_t>(target.visibleTextOffset) : std::nullopt;
   if (!EpubReaderUtils::saveProgress(*local.epub, target.spineIndex, target.pageNumber, pageCount, offset)) {
-    return Result::FAILED;
+    return KoSyncQuiet::Result::FAILED;
   }
   RecentBookProgress::saveCachedEpubPercent(*local.epub, target.spineIndex, target.pageNumber, pageCount);
-  KO_SYNC_STATUS.markSynced(epubPath, (static_cast<uint32_t>(std::max(0, target.spineIndex)) << 16) |
-                                          static_cast<uint32_t>(std::max(0, target.pageNumber)));
+  const uint32_t key = (static_cast<uint32_t>(std::max(0, target.spineIndex)) << 16) |
+                       static_cast<uint32_t>(std::max(0, target.pageNumber));
+  // A redrawn sleep screen reads the persisted position, so the pulled page must be on SD, not just in memory.
+  KO_SYNC_STATUS.notePosition(epubPath, key);
+  KO_SYNC_STATUS.persistPosition();
+  KO_SYNC_STATUS.markSynced(epubPath, key);
   LOG_INF(TAG, "pull: moved to spine %d page %d (%.1f%%)", target.spineIndex, target.pageNumber,
           remote.percentage * 100.0f);
-  return Result::PULLED;
+  return KoSyncQuiet::Result::PULLED;
 }
+}  // namespace
+
+namespace KoSyncQuiet {
+
+Result syncBoth(const std::string& epubPath, const bool allowPush, const bool allowPull) {
+  if (!usable(epubPath)) return Result::SKIPPED;
+  syncClockForTls();
+  Local local;
+  if (!loadLocal(epubPath, local)) return Result::FAILED;
+
+  KOReaderProgress remote;
+  const auto got = KOReaderSyncClient::getProgress(local.hash, remote);
+  if (got == KOReaderSyncClient::NOT_FOUND) return allowPush ? upload(epubPath, local) : Result::IN_SYNC;
+  if (got != KOReaderSyncClient::OK) {
+    LOG_ERR(TAG, "fetch remote failed: %s", KOReaderSyncClient::errorString(got).c_str());
+    return Result::FAILED;
+  }
+
+  const float delta = local.ko.percentage - remote.percentage;
+  if (delta > SAME_PROGRESS_EPSILON) return allowPush ? upload(epubPath, local) : Result::IN_SYNC;
+  if (delta < -SAME_PROGRESS_EPSILON) return allowPull ? applyRemote(epubPath, local, remote) : Result::IN_SYNC;
+  // Equal: what the server holds is what is on the reader.
+  KO_SYNC_STATUS.markSynced(epubPath, positionKey(local));
+  return Result::IN_SYNC;
+}
+
+Result pushIfAhead(const std::string& epubPath) { return syncBoth(epubPath, true, false); }
+
+Result pullIfBehind(const std::string& epubPath) { return syncBoth(epubPath, false, true); }
 
 void pullOnWake() {
   if (!SETTINGS.koSyncPullOnWake || !KOREADER_STORE.hasCredentials()) return;
