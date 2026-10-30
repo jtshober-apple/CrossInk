@@ -129,6 +129,27 @@ constexpr int kSyncBadgeLineWidth = 2;               // border thickness
 constexpr int kTesseraeFooterRightMargin = 18;       // footer inset on the Tesserae dashboard
 constexpr int kTesseraeFooterCenterFromBottom = 62;  // footer vertical centre, px above the bottom edge
 
+// Set by renderTesseraeSleepScreen(): the dashboard on screen is more than 24 hours old.
+bool tesseraeFrameStale = false;
+constexpr int kStaleMarkX = 206;  // right of the date, clear of the widest date and the "updated" time
+constexpr int kStaleMarkY = 12;
+constexpr int kStaleMarkSize = 34;
+
+// Warning triangle beside the date on the Tesserae dashboard when the frame could not be refreshed for a day.
+void drawStaleDashboardMark(GfxRenderer& renderer) {
+  if (!tesseraeFrameStale) return;
+  const bool inverted =
+      SETTINGS.sleepScreenCoverFilter == CrossPointSettings::SLEEP_SCREEN_COVER_FILTER::INVERTED_BLACK_AND_WHITE;
+  const int xs[3] = {kStaleMarkX + kStaleMarkSize / 2, kStaleMarkX, kStaleMarkX + kStaleMarkSize};
+  const int ys[3] = {kStaleMarkY, kStaleMarkY + kStaleMarkSize - 2, kStaleMarkY + kStaleMarkSize - 2};
+  renderer.fillPolygon(xs, ys, 3, !inverted);
+  const int fontId = UI_10_FONT_ID;
+  const int textW = renderer.getTextWidth(fontId, "!", EpdFontFamily::BOLD);
+  const int textH = renderer.getLineHeight(fontId);
+  renderer.drawText(fontId, kStaleMarkX + (kStaleMarkSize - textW) / 2, kStaleMarkY + kStaleMarkSize - textH - 1, "!",
+                    inverted, EpdFontFamily::BOLD);
+}
+
 // Draws a small pill badge reading "–" in the bottom-right corner of the
 // screen.  Inverts colours when the sleep cover filter inverts the screen.
 void drawKoSyncUnsyncedBadge(GfxRenderer& renderer) {
@@ -822,6 +843,7 @@ bool SleepActivity::renderBitmapSleepScreen(Bitmap& bitmap) const {
 
   if (!hasGreyscale) {
     drawKoSyncUnsyncedBadge(renderer);
+    drawStaleDashboardMark(renderer);
     renderer.displayBuffer(HalDisplay::HALF_REFRESH, TURN_OFF_SCREEN_AFTER_SLEEP_REFRESH);
     return true;
   }
@@ -852,6 +874,7 @@ bool SleepActivity::renderBitmapSleepScreen(Bitmap& bitmap) const {
     }
     // Stamp badge into each grayscale plane so it appears in the final composite.
     drawKoSyncUnsyncedBadge(renderer);
+    drawStaleDashboardMark(renderer);
     if (mode == GfxRenderer::GRAYSCALE_LSB)
       renderer.copyGrayscaleLsbBuffers();
     else
@@ -1013,6 +1036,7 @@ void SleepActivity::renderTesseraeSleepScreen() const {
 
   // Pull the freshest dashboard before drawing; on any failure the cached frame below is used.
   TesseraeClient::refreshBeforeSleep();
+  tesseraeFrameStale = TesseraeClient::frameIsStale();
 
   FsFile file;
   if (Storage.openFileForRead("SLP", TesseraeClient::TESSERAE_CACHE_PATH, file)) {

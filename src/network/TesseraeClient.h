@@ -38,6 +38,13 @@ class TesseraeClient {
 
   static constexpr const char* TESSERAE_CACHE_PATH = "/.crosspoint/tesserae_frame.bmp";
 
+  /**
+   * True when the dashboard on screen is more than 24 hours old: the last successful frame fetch (stamped from the
+   * RTC) is over a day ago or was never recorded. False when the RTC is unavailable, so a missing clock never
+   * raises a false alarm.
+   */
+  static bool frameIsStale();
+
   /** Convert an error code to a short English string for logging. */
   static const char* errorString(Error error);
 
