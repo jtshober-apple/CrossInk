@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <HalClock.h>
+#include <HalPowerManager.h>
 #include <HalStorage.h>
 #include <I18n.h>
 #include <Logging.h>
@@ -343,6 +344,7 @@ TesseraeClient::Error TesseraeClient::sendHeartbeat(uint16_t* nextPollSeconds) {
 
   JsonDocument bodyDoc;
   bodyDoc["rssi"] = WiFi.RSSI();
+  bodyDoc["battery_pct"] = powerManager.getBatteryPercentage();
   bodyDoc["ip"] = ipBuf;
   bodyDoc["mac"] = macBuf;
   bodyDoc["fw_version"] = FIRMWARE_ID;
