@@ -129,35 +129,17 @@ constexpr int kSyncBadgeLineWidth = 2;               // border thickness
 constexpr int kTesseraeFooterRightMargin = 18;       // footer inset on the Tesserae dashboard
 constexpr int kTesseraeFooterCenterFromBottom = 62;  // footer vertical centre, px above the bottom edge
 
-// Set by renderTesseraeSleepScreen(): the dashboard on screen is more than 24 hours old.
+// Set by renderTesseraeSleepScreen(): the refresh did not complete and the dashboard on screen is old. A refresh also
+// syncs the open book, so this raises the same NOT SYNCED tag as an unsent reading position.
 bool tesseraeFrameStale = false;
-constexpr int kStaleMarkX = 206;  // right of the date, clear of the widest date and the "updated" time
-constexpr int kStaleMarkY = 12;
-constexpr int kStaleMarkSize = 34;
-
-// Warning triangle beside the date on the Tesserae dashboard when the frame could not be refreshed for a day.
-void drawStaleDashboardMark(GfxRenderer& renderer) {
-  if (!tesseraeFrameStale) return;
-  const bool inverted =
-      SETTINGS.sleepScreenCoverFilter == CrossPointSettings::SLEEP_SCREEN_COVER_FILTER::INVERTED_BLACK_AND_WHITE;
-  const int xs[3] = {kStaleMarkX + kStaleMarkSize / 2, kStaleMarkX, kStaleMarkX + kStaleMarkSize};
-  const int ys[3] = {kStaleMarkY, kStaleMarkY + kStaleMarkSize - 2, kStaleMarkY + kStaleMarkSize - 2};
-  renderer.fillPolygon(xs, ys, 3, !inverted);
-  const int fontId = UI_10_FONT_ID;
-  const int textW = renderer.getTextWidth(fontId, "!", EpdFontFamily::BOLD);
-  const int textH = renderer.getLineHeight(fontId);
-  renderer.drawText(fontId, kStaleMarkX + (kStaleMarkSize - textW) / 2, kStaleMarkY + kStaleMarkSize - textH - 1, "!",
-                    inverted, EpdFontFamily::BOLD);
-}
 
 // Draws a small pill badge reading "–" in the bottom-right corner of the
 // screen.  Inverts colours when the sleep cover filter inverts the screen.
 void drawKoSyncUnsyncedBadge(GfxRenderer& renderer) {
-  if (!SETTINGS.koSyncAutoPushOnClose) return;
-  if (!KOREADER_STORE.hasCredentials()) return;
   const std::string& path = APP_STATE.openEpubPath;
-  if (path.empty()) return;
-  if (KO_SYNC_STATUS.isSynced(path)) return;
+  const bool positionUnsynced = SETTINGS.koSyncAutoPushOnClose && KOREADER_STORE.hasCredentials() && !path.empty() &&
+                                !KO_SYNC_STATUS.isSynced(path);
+  if (!positionUnsynced && !tesseraeFrameStale) return;
 
   const int fontId = SMALL_FONT_ID;
   // The Tesserae dashboard reserves a slot at the right of its currently-reading footer for this tag
@@ -843,7 +825,6 @@ bool SleepActivity::renderBitmapSleepScreen(Bitmap& bitmap) const {
 
   if (!hasGreyscale) {
     drawKoSyncUnsyncedBadge(renderer);
-    drawStaleDashboardMark(renderer);
     renderer.displayBuffer(HalDisplay::HALF_REFRESH, TURN_OFF_SCREEN_AFTER_SLEEP_REFRESH);
     return true;
   }
@@ -874,7 +855,6 @@ bool SleepActivity::renderBitmapSleepScreen(Bitmap& bitmap) const {
     }
     // Stamp badge into each grayscale plane so it appears in the final composite.
     drawKoSyncUnsyncedBadge(renderer);
-    drawStaleDashboardMark(renderer);
     if (mode == GfxRenderer::GRAYSCALE_LSB)
       renderer.copyGrayscaleLsbBuffers();
     else
