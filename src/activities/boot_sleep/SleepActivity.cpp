@@ -1052,6 +1052,7 @@ void SleepActivity::renderTesseraeSleepScreen() const {
     TesseraeClient::setStepListener(nullptr);
   }
   tesseraeFrameStale = TesseraeClient::frameIsStale();
+  if (tesseraeFrameStale) TesseraeClient::markStaleDrawn();
 
   FsFile file;
   if (Storage.openFileForRead("SLP", TesseraeClient::TESSERAE_CACHE_PATH, file)) {

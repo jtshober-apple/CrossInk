@@ -34,12 +34,16 @@ constexpr int PANEL_W = 480;
 constexpr int PANEL_H = 800;
 constexpr const char* FIRMWARE_ID = "crossink";
 constexpr const char* FRAME_TMP_PATH = "/.crosspoint/tesserae_frame.tmp";
-constexpr uint32_t SLEEP_WIFI_TIMEOUT_MS = 10000;
+constexpr uint32_t SLEEP_WIFI_TIMEOUT_MS = 7000;
 // Same order of magnitude as the KOSync TLS gate; skip the refresh rather than risk a failed handshake.
 constexpr uint32_t SLEEP_MIN_FREE_HEAP = 40000;
 constexpr uint32_t SLEEP_MIN_MAX_ALLOC_HEAP = 24000;
-// After a push: the relay polls every 10s, then the server re-renders the dashboard from the new position.
-constexpr uint32_t RELAY_SETTLE_MS = 20000;
+// Pressing power must reach the sleep screen in a predictable time: stages that would start too late are skipped
+// and the cached frame is shown instead. Typical total is ~10-15 s; this only bounds the bad days.
+constexpr uint32_t SLEEP_SYNC_LATEST_START_MS = 6000;    // KoSync only starts if Wi-Fi was up by now
+constexpr uint32_t SLEEP_FETCH_LATEST_START_MS = 18000;  // the frame download only starts before this
+// After a push the server re-renders from the new position; check again soon instead of making the user wait.
+constexpr uint32_t QUICK_RECHECK_SECONDS = 75;
 
 // Blocking join of the last-used (else first) saved network. Returns true once connected.
 bool connectSavedWifi() {
@@ -122,9 +126,13 @@ int postJson(const std::string& url, const std::string& body, bool withToken, st
 }
 
 constexpr const char* FETCH_STAMP_PATH = "/.crosspoint/tesserae_fetched";
+// Exists once the sleep screen was drawn with the stale-dashboard mark; cleared by the next good fetch.
+constexpr const char* STALE_DRAWN_PATH = "/.crosspoint/tesserae_stale_drawn";
 constexpr int64_t STALE_AFTER_MINUTES = 24 * 60;
+constexpr int64_t RETRY_STALE_AFTER_MINUTES = 60;
 
 void stampFetchTime() {
+  Storage.remove(STALE_DRAWN_PATH);
   int64_t now = 0;
   if (!rtcMinutesSinceEpoch(now)) return;
   FsFile file;
@@ -381,6 +389,8 @@ TesseraeClient::Error TesseraeClient::sendHeartbeat(uint16_t* nextPollSeconds) {
 namespace {
 bool refreshedThisBoot = false;
 bool timedWakeRender = false;
+bool lastAttemptFailed = false;
+bool quickRecheck = false;
 std::function<void(const char*)> stepListener;
 
 void notifyStep(const char* text) {
@@ -394,6 +404,11 @@ void TesseraeClient::leaveWifi() { wifiOff(); }
 void TesseraeClient::markRefreshed() { refreshedThisBoot = true; }
 void TesseraeClient::setTimedWake(const bool v) { timedWakeRender = v; }
 bool TesseraeClient::isTimedWake() { return timedWakeRender; }
+uint32_t TesseraeClient::takeQuickRecheckSeconds() {
+  const bool want = quickRecheck;
+  quickRecheck = false;
+  return want ? QUICK_RECHECK_SECONDS : 0;
+}
 void TesseraeClient::setStepListener(std::function<void(const char*)> listener) { stepListener = std::move(listener); }
 
 TesseraeClient::Error TesseraeClient::refreshBeforeSleep(const bool timedWake) {
@@ -409,54 +424,66 @@ TesseraeClient::Error TesseraeClient::refreshBeforeSleep(const bool timedWake) {
     return LOW_MEMORY;
   }
 
+  const uint32_t startedMs = millis();
   const bool alreadyConnected = hasActiveStationWifiConnection();
   if (!alreadyConnected) notifyStep(tr(STR_STEP_CONNECTING));
   if (!alreadyConnected && !connectSavedWifi()) {
     wifiOff();
+    lastAttemptFailed = true;
     return NETWORK_ERROR;
   }
 
-  // Sync the open book first, while the heap is at its largest (TLS needs it) and before the dashboard is fetched:
-  // a pushed position reaches Audiobookshelf through the relay, and the server re-renders the footer from it, so
-  // the frame fetched below already shows this reading position. Going to sleep only pushes (the reader is the
-  // newest source); a timed wake also pulls, so a book read or listened to elsewhere reaches this reader.
-  bool pushed = false;
+  // Sync the open book first, while the heap is at its largest (TLS needs it). Going to sleep only pushes (the
+  // reader is the newest source); a timed wake also pulls, so a book read or listened to elsewhere reaches this
+  // reader. Skipped when Wi-Fi was slow: a late sync would hold up the sleep screen.
   const bool syncing = SETTINGS.koSyncPushOnSleep || (timedWake && SETTINGS.koSyncPullOnWake);
-  if (syncing) notifyStep((timedWake ? tr(STR_STEP_SYNCING) : tr(STR_STEP_UPLOADING)));
-  if (SETTINGS.koSyncPushOnSleep || (timedWake && SETTINGS.koSyncPullOnWake)) {
+  if (syncing && millis() - startedMs <= SLEEP_SYNC_LATEST_START_MS) {
+    notifyStep((timedWake ? tr(STR_STEP_SYNCING) : tr(STR_STEP_UPLOADING)));
     const auto synced = KoSyncQuiet::syncBoth(APP_STATE.openEpubPath, SETTINGS.koSyncPushOnSleep != 0,
                                               timedWake && SETTINGS.koSyncPullOnWake != 0);
     LOG_INF(TAG, "refresh: kosync result=%d (timedWake=%d)", static_cast<int>(synced), timedWake);
-    pushed = synced == KoSyncQuiet::Result::PUSHED;
+    // The relay and the server need a moment to redraw the footer from the pushed position: look again shortly.
+    quickRecheck = synced == KoSyncQuiet::Result::PUSHED;
+  } else if (syncing) {
+    LOG_INF(TAG, "refresh: kosync skipped, Wi-Fi took %u ms", static_cast<unsigned>(millis() - startedMs));
   }
-  if (pushed) {
-    notifyStep(tr(STR_STEP_WAITING));
-    delay(RELAY_SETTLE_MS);
-  }
-  notifyStep(tr(STR_STEP_FETCHING));
 
   Error err = OK;
-  if (SETTINGS.tessDeviceToken[0] == '\0') {
-    err = discover();
-    LOG_INF(TAG, "sleep refresh: discover: %s", errorString(err));
-  }
-  if (err == OK) {
-    err = fetchFrame();
-    if (err == NOT_PAIRED) {
-      // Server forgot us; try to re-claim once (works if the device is still registered by MAC).
+  if (millis() - startedMs > SLEEP_FETCH_LATEST_START_MS) {
+    LOG_INF(TAG, "refresh: out of time, showing the cached frame");
+    err = NETWORK_ERROR;
+  } else {
+    notifyStep(tr(STR_STEP_FETCHING));
+    if (SETTINGS.tessDeviceToken[0] == '\0') {
       err = discover();
-      if (err == OK) err = fetchFrame();
+      LOG_INF(TAG, "sleep refresh: discover: %s", errorString(err));
     }
-    LOG_INF(TAG, "sleep refresh: fetchFrame: %s", errorString(err));
     if (err == OK) {
-      uint16_t nextPollSeconds = 0;
-      sendHeartbeat(&nextPollSeconds);
+      err = fetchFrame();
+      if (err == NOT_PAIRED) {
+        // Server forgot us; try to re-claim once (works if the device is still registered by MAC).
+        err = discover();
+        if (err == OK) err = fetchFrame();
+      }
+      LOG_INF(TAG, "sleep refresh: fetchFrame: %s", errorString(err));
+      if (err == OK) {
+        uint16_t nextPollSeconds = 0;
+        sendHeartbeat(&nextPollSeconds);
+      }
     }
   }
+  lastAttemptFailed = err != OK;
 
   notifyStep(tr(STR_ENTERING_SLEEP));
   if (!alreadyConnected) wifiOff();
   return err;
+}
+
+bool TesseraeClient::staleMarkNeedsRedraw() { return frameIsStale() && !Storage.exists(STALE_DRAWN_PATH); }
+
+void TesseraeClient::markStaleDrawn() {
+  FsFile file;
+  if (Storage.openFileForWrite("TESS", STALE_DRAWN_PATH, file)) file.close();
 }
 
 bool TesseraeClient::frameIsStale() {
@@ -469,5 +496,6 @@ bool TesseraeClient::frameIsStale() {
   file.close();
   const long long stamp = atoll(buf);
   if (stamp <= 0) return true;
-  return now - stamp > STALE_AFTER_MINUTES;
+  // A day without a refresh is always stale; after a failed attempt an hour is enough to say so.
+  return now - stamp > (lastAttemptFailed ? RETRY_STALE_AFTER_MINUTES : STALE_AFTER_MINUTES);
 }

@@ -44,6 +44,9 @@ class TesseraeClient {
    * raises a false alarm.
    */
   static bool frameIsStale();
+  // True when the on-screen dashboard is stale but was drawn without the mark (a failed timed wake redraws it).
+  static bool staleMarkNeedsRedraw();
+  static void markStaleDrawn();
 
   /** Blocking join of the saved Wi-Fi network (10 s timeout). Pair with leaveWifi(). */
   static bool joinSavedWifi();
@@ -92,6 +95,8 @@ class TesseraeClient {
   // True while a timed wake redraws the dashboard (the sleep screen then says "Updating display").
   static void setTimedWake(bool timedWake);
   static bool isTimedWake();
+  // Seconds until a follow-up check is wanted (a push just happened and the dashboard may lag it), else 0.
+  static uint32_t takeQuickRecheckSeconds();
   // Called with a short status line as refreshBeforeSleep() moves through its steps (the sleep screen shows it).
   static void setStepListener(std::function<void(const char*)> listener);
 

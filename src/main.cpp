@@ -1095,6 +1095,8 @@ static uint32_t tesseraeTimedWakeSeconds() {
     return 0;
   }
   if (powerManager.getBatteryPercentage() < 15) return 0;
+  const uint32_t recheck = TesseraeClient::takeQuickRecheckSeconds();
+  if (recheck != 0) return recheck;
   return static_cast<uint32_t>(SETTINGS.tessAutoRefreshMin) * 60u;
 }
 
@@ -1218,7 +1220,9 @@ static void timedWakeRefreshAndResleep() {
   LOG_INF("BOOT", "Timed wake: refreshing Tesserae dashboard");
   TesseraeClient::setTimedWake(true);
   const auto err = TesseraeClient::refreshBeforeSleep(/*timedWake=*/true);
-  if (err == TesseraeClient::OK) {
+  // A failed refresh normally leaves the panel alone, but once the picture has gone stale it must say so.
+  const bool redrawStale = err != TesseraeClient::OK && TesseraeClient::staleMarkNeedsRedraw();
+  if (err == TesseraeClient::OK || redrawStale) {
     TesseraeClient::markRefreshed();  // SleepActivity must not fetch a second time
     setupDisplayAndFonts(/*seamless=*/true, /*loadReaderResources=*/false, /*useReaderRenderStack=*/true);
     deepSleepInProgress = true;

@@ -81,12 +81,6 @@ bool loadLocal(const std::string& epubPath, Local& out) {
   return out.ko.valid;
 }
 
-void syncClockForTls() {
-#ifndef SIMULATOR
-  halClock.syncSystemTimeFromNTP();
-#endif
-}
-
 uint32_t positionKey(const Local& l) {
   return (static_cast<uint32_t>(std::max(0, l.spine)) << 16) | static_cast<uint32_t>(std::max(0, l.page));
 }
@@ -156,7 +150,6 @@ namespace KoSyncQuiet {
 
 Result syncBoth(const std::string& epubPath, const bool allowPush, const bool allowPull) {
   if (!usable(epubPath)) return Result::SKIPPED;
-  syncClockForTls();
   Local local;
   if (!loadLocal(epubPath, local)) return Result::FAILED;
 

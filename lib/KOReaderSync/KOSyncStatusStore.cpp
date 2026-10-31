@@ -4,6 +4,7 @@
 #include <Logging.h>
 #include <PersistableStore.h>
 
+#include <algorithm>
 #include <ctime>
 
 void KOSyncStatusStore::ensureLoaded() {
@@ -32,7 +33,8 @@ void KOSyncStatusStore::ensureLoaded() {
 
 void KOSyncStatusStore::markSynced(const std::string& epubPath, const uint32_t pushedPosition) {
   ensureLoaded();
-  const uint32_t now = static_cast<uint32_t>(time(nullptr));
+  // The clock is unset after a deep-sleep boot without NTP; zero would read as "never synced".
+  const uint32_t now = std::max<uint32_t>(1, static_cast<uint32_t>(time(nullptr)));
   syncedAt_[epubPath] = now;
   if (pushedPosition != kUnknownPosition) {
     pushedPos_[epubPath] = pushedPosition;
