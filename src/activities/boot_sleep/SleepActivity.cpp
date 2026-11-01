@@ -1101,11 +1101,30 @@ void SleepActivity::renderPowerOffScreen() const {
   const std::string& path = currentBookPath.empty() ? APP_STATE.openEpubPath : currentBookPath;
   if (!path.empty()) {
     RecentBook book = recentBookForPath(path);
-    std::string coverPath = SleepCoverAssets::cachedDashboardCoverPathFor(path);
-    if (coverPath.empty()) coverPath = book.coverBmpPath;
+    // The cached cover paths are templates for a thumbnail size, not files: resolve one that exists.
+    constexpr int kCoverW = DashboardMetrics::homeCoverImageWidth;
+    constexpr int kCoverH = DashboardMetrics::homeCoverImageHeight;
+    const auto existing = [](const std::string& p) { return !p.empty() && Storage.exists(p.c_str()); };
+    const auto resolveCover = [&]() -> std::string {
+      if (FsHelpers::hasEpubExtension(path)) {
+        const std::string adaptive = Epub(path, "/.crosspoint").getAdaptiveThumbBmpPath(kCoverW, kCoverH);
+        if (existing(adaptive)) return adaptive;
+      }
+      const std::string templates[2] = {SleepCoverAssets::cachedDashboardCoverPathFor(path), book.coverBmpPath};
+      for (const auto& t : templates) {
+        if (t.empty()) continue;
+        for (const std::string& candidate :
+             {UITheme::getCoverThumbPath(t, kCoverW, kCoverH),
+              UITheme::getCoverThumbPath(t, UITheme::getInstance().getMetrics().homeCoverHeight), t}) {
+          if (existing(candidate)) return candidate;
+        }
+      }
+      return {};
+    };
+    std::string coverPath = resolveCover();
     // Tesserae mode never builds the dashboard cover, so make it once (cached afterwards).
     if (coverPath.empty() && SleepCoverAssets::prepareDashboardCoverForPath(path, &renderer)) {
-      coverPath = SleepCoverAssets::cachedDashboardCoverPathFor(path);
+      coverPath = resolveCover();
     }
 
     const int boxX = kMargin, boxY = H / 2 + 28, boxW = 200, boxH = H / 2 - 28 - 40;
