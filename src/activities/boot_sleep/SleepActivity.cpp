@@ -1010,18 +1010,26 @@ void SleepActivity::renderDashboardSleepScreen() const {
 // Stand-in drawn on the device at power-off, before the dashboard has been refreshed: the clock, date and battery
 // are the device's own, and the book is whatever is open. The full dashboard replaces it after the next refresh.
 namespace {
-void drawSevenSegDigit(const GfxRenderer& r, const int x, const int y, const int w, const int h, const int t,
-                       const int digit) {
+// Rounded stroke digits. A "1" is a single bar, so its cell is narrow and the clock stays visually centred.
+int clockDigitWidth(const int digit, const int w, const int t) { return digit == 1 ? t : w; }
+
+void drawClockDigit(const GfxRenderer& r, const int x, const int y, const int w, const int h, const int t,
+                    const int digit) {
   static constexpr uint8_t kSegments[10] = {0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F};  // a..g
   const uint8_t m = kSegments[digit % 10];
   const int half = h / 2;
-  if (m & 0x01) r.fillRect(x + t / 2, y, w - t, t, true);                 // a
-  if (m & 0x02) r.fillRect(x + w - t, y + t / 2, t, half - t / 2, true);  // b
-  if (m & 0x04) r.fillRect(x + w - t, y + half, t, half - t / 2, true);   // c
-  if (m & 0x08) r.fillRect(x + t / 2, y + h - t, w - t, t, true);         // d
-  if (m & 0x10) r.fillRect(x, y + half, t, half - t / 2, true);           // e
-  if (m & 0x20) r.fillRect(x, y + t / 2, t, half - t / 2, true);          // f
-  if (m & 0x40) r.fillRect(x + t / 2, y + half - t / 2, w - t, t, true);  // g
+  const int rad = t / 2;
+  auto bar = [&](const int bx, const int by, const int bw, const int bh) {
+    r.fillRoundedRect(bx, by, bw, bh, rad, Color::Black);
+  };
+  if (digit == 1) return bar(x, y, t, h);
+  if (m & 0x01) bar(x, y, w, t);                                    // a
+  if (m & 0x02) bar(x + w - t, y, t, half + t / 2);                 // b
+  if (m & 0x04) bar(x + w - t, y + half - t / 2, t, half + t / 2);  // c
+  if (m & 0x08) bar(x, y + h - t, w, t);                            // d
+  if (m & 0x10) bar(x, y + half - t / 2, t, half + t / 2);          // e
+  if (m & 0x20) bar(x, y, t, half + t / 2);                         // f
+  if (m & 0x40) bar(x, y + half - t / 2, w, t);                     // g
 }
 }  // namespace
 
@@ -1038,23 +1046,28 @@ void SleepActivity::renderPowerOffScreen() const {
   ReadingStatsDateTime now;
   if (getCurrentLocalReadingStatsDateTime(now) && now.isValid()) {
     const int hour12 = now.hour % 12 == 0 ? 12 : now.hour % 12;
-    constexpr int dw = 84, dh = 150, dt = 18, gap = 14, colonW = 24;
-    const bool tens = hour12 >= 10;
-    const int totalW = (tens ? dw + gap : 0) + dw + gap + colonW + gap + dw + gap + dw;
+    constexpr int dw = 84, dh = 150, dt = 20, gap = 18, colonW = 22;
+    const int digits[4] = {hour12 / 10 == 0 ? -1 : hour12 / 10, hour12 % 10, now.minute / 10, now.minute % 10};
+    int totalW = colonW;
+    int shown = 0;
+    for (const int d : digits) {
+      if (d < 0) continue;
+      totalW += clockDigitWidth(d, dw, dt) + gap;
+      shown++;
+    }
     int x = (W - totalW) / 2;
     const int y = 90;
-    if (tens) {
-      drawSevenSegDigit(renderer, x, y, dw, dh, dt, hour12 / 10);
-      x += dw + gap;
+    for (int k = 0; k < 4; k++) {
+      const int d = digits[k];
+      if (d < 0) continue;
+      drawClockDigit(renderer, x, y, dw, dh, dt, d);
+      x += clockDigitWidth(d, dw, dt) + gap;
+      if (k == 1) {
+        renderer.fillRoundedRect(x, y + dh / 3 - colonW / 2, colonW, colonW, colonW / 2, Color::Black);
+        renderer.fillRoundedRect(x, y + 2 * dh / 3 - colonW / 2, colonW, colonW, colonW / 2, Color::Black);
+        x += colonW + gap;
+      }
     }
-    drawSevenSegDigit(renderer, x, y, dw, dh, dt, hour12 % 10);
-    x += dw + gap;
-    renderer.fillRect(x, y + dh / 3 - 8, colonW, colonW, true);
-    renderer.fillRect(x, y + 2 * dh / 3 - 8, colonW, colonW, true);
-    x += colonW + gap;
-    drawSevenSegDigit(renderer, x, y, dw, dh, dt, now.minute / 10);
-    x += dw + gap;
-    drawSevenSegDigit(renderer, x, y, dw, dh, dt, now.minute % 10);
     renderer.drawCenteredText(UI_12_FONT_ID, y + dh + 14, now.hour >= 12 ? "PM" : "AM", true, EpdFontFamily::BOLD);
 
     static const char* const kDays[] = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
@@ -1090,6 +1103,10 @@ void SleepActivity::renderPowerOffScreen() const {
     RecentBook book = recentBookForPath(path);
     std::string coverPath = SleepCoverAssets::cachedDashboardCoverPathFor(path);
     if (coverPath.empty()) coverPath = book.coverBmpPath;
+    // Tesserae mode never builds the dashboard cover, so make it once (cached afterwards).
+    if (coverPath.empty() && SleepCoverAssets::prepareDashboardCoverForPath(path, &renderer)) {
+      coverPath = SleepCoverAssets::cachedDashboardCoverPathFor(path);
+    }
 
     const int boxX = kMargin, boxY = H / 2 + 28, boxW = 200, boxH = H / 2 - 28 - 40;
     int coverRight = boxX + boxW;
