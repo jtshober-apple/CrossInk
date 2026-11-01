@@ -1135,7 +1135,7 @@ void SleepActivity::renderPowerOffScreen() const {
     const float percent = RecentBookProgress::loadPercent(book);
     const bool hasPercent = percent >= 0.0f;
     const int blockH = static_cast<int>(titleLines.size()) * titleH + 10 +
-                       static_cast<int>(authorLines.size()) * authorH + (hasPercent ? 28 + titleH + 12 + 18 : 0);
+                       static_cast<int>(authorLines.size()) * authorH + (hasPercent ? 28 + authorH + 10 + 22 : 0);
     int ty = boxY + std::max(0, (boxH - blockH) / 2);
     for (const auto& line : titleLines) {
       renderer.drawText(UI_12_FONT_ID, tx, ty, line.c_str(), true, EpdFontFamily::BOLD);
@@ -1148,13 +1148,12 @@ void SleepActivity::renderPowerOffScreen() const {
     }
     if (hasPercent) {
       ty += 28;
-      char label[24];
-      snprintf(label, sizeof(label), "Reading \xC2\xB7 %d%%", static_cast<int>(percent + 0.5f));
-      renderer.drawText(UI_12_FONT_ID, tx, ty, label, true, EpdFontFamily::BOLD);
-      ty += titleH + 12;
-      renderer.drawRect(tx, ty, tw, 18, 2, true);
-      renderer.fillRect(tx + 3, ty + 3, std::max(0, (tw - 6) * std::min(100, static_cast<int>(percent + 0.5f)) / 100),
-                        12, true);
+      // No number: the dashboard footer shows the same bar, so the two can't disagree.
+      renderer.drawText(UI_10_FONT_ID, tx, ty, "Reading");
+      ty += renderer.getLineHeight(UI_10_FONT_ID) + 10;
+      renderer.drawRect(tx, ty, tw, 22, 2, true);
+      renderer.fillRect(tx + 4, ty + 4, std::max(0, (tw - 8) * std::min(100, static_cast<int>(percent + 0.5f)) / 100),
+                        14, true);
     }
   }
 
