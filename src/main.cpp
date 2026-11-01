@@ -1095,6 +1095,8 @@ static uint32_t tesseraeTimedWakeSeconds() {
     return 0;
   }
   if (powerManager.getBatteryPercentage() < 15) return 0;
+  const uint32_t deferred = TesseraeClient::takeDeferredRefreshSeconds();
+  if (deferred != 0) return deferred;
   const uint32_t recheck = TesseraeClient::takeQuickRecheckSeconds();
   if (recheck != 0) return recheck;
   return static_cast<uint32_t>(SETTINGS.tessAutoRefreshMin) * 60u;
@@ -1403,7 +1405,11 @@ void setup() {
   const bool isSleepWake = wakeupReason == HalGPIO::WakeupReason::PowerButton;
   // Quiet pull: the previous sleep screen stays up while the radio fetches the server position, and the book then
   // opens at the right page. A failure is reported by the reader as a toast.
-  if (isSleepWake && !isSilentReboot) KoSyncQuiet::pullOnWake();
+  // With the dashboard as the sleep screen, the background wakes already pull; a blocking pull here only delays
+  // the book by the Wi-Fi + TLS time.
+  const bool backgroundSyncs = SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::TESSERAE_SLEEP &&
+                               SETTINGS.tessAutoRefreshMin != 0 && SETTINGS.tessDeviceToken[0] != '\0';
+  if (isSleepWake && !isSilentReboot && !backgroundSyncs) KoSyncQuiet::pullOnWake();
   I18N.setLanguage(static_cast<Language>(SETTINGS.language));
   // Normal boot store deferral adapted from Sichroteph/YACP commit
   // 20af8aee8d3e1d560456753b08d1f52e5488621f (MIT). Accessors load these

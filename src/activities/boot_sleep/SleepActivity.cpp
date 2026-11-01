@@ -1009,7 +1009,12 @@ void SleepActivity::renderTesseraeSleepScreen() const {
   // The X4 Pro/Classic skip the "Entering sleep" popup, which was fine while sleeping was instant. The refresh
   // below takes seconds, so say what is happening instead of looking frozen.
   // Walk through the steps on screen: each one replaces the previous popup, which can be wider than the next.
-  const bool showSteps = (BoardConfig::isX4Pro() || CROSSINK_APP_DEVICE_X4CLASSIC) && SETTINGS.tessServerUrl[0] != '\0';
+  // Power-off must be quick: show the cached frame now and let a short timed wake do the sync and fetch. The
+  // timed-wake path itself (and an unpaired device, which has no wake timer) keeps the inline refresh.
+  const bool deferNetwork = !TesseraeClient::isTimedWake() && SETTINGS.tessDeviceToken[0] != '\0' &&
+                            SETTINGS.tessAutoRefreshMin != 0 && SETTINGS.tessServerUrl[0] != '\0';
+  const bool showSteps =
+      !deferNetwork && (BoardConfig::isX4Pro() || CROSSINK_APP_DEVICE_X4CLASSIC) && SETTINGS.tessServerUrl[0] != '\0';
   if (showSteps) {
     const bool fromReader = APP_STATE.lastSleepFromReader;
     const auto popupOrientation = sleepPopupOrientation;
@@ -1027,7 +1032,11 @@ void SleepActivity::renderTesseraeSleepScreen() const {
   }
 
   // Pull the freshest dashboard before drawing; on any failure the cached frame below is used.
-  TesseraeClient::refreshBeforeSleep();
+  if (deferNetwork) {
+    TesseraeClient::deferRefresh();
+  } else {
+    TesseraeClient::refreshBeforeSleep();
+  }
   if (showSteps) {
     TesseraeClient::setStepListener(nullptr);
   }

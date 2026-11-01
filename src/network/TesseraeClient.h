@@ -97,6 +97,11 @@ class TesseraeClient {
   static bool isTimedWake();
   // Seconds until a follow-up check is wanted (a push just happened and the dashboard may lag it), else 0.
   static uint32_t takeQuickRecheckSeconds();
+
+  /** Power-off shows the cached frame at once; the sync and fetch run on a short timed wake instead. */
+  static void deferRefresh();
+  /** Seconds until that deferred refresh (once), or 0 when none is pending. */
+  static uint32_t takeDeferredRefreshSeconds();
   // Called with a short status line as refreshBeforeSleep() moves through its steps (the sleep screen shows it).
   static void setStepListener(std::function<void(const char*)> listener);
 

@@ -44,6 +44,7 @@ constexpr uint32_t SLEEP_SYNC_LATEST_START_MS = 6000;    // KoSync only starts i
 constexpr uint32_t SLEEP_FETCH_LATEST_START_MS = 18000;  // the frame download only starts before this
 // After a push the server re-renders from the new position; check again soon instead of making the user wait.
 constexpr uint32_t QUICK_RECHECK_SECONDS = 75;
+constexpr uint32_t DEFERRED_REFRESH_SECONDS = 15;
 
 // Blocking join of the last-used (else first) saved network. Returns true once connected.
 bool connectSavedWifi() {
@@ -391,6 +392,7 @@ bool refreshedThisBoot = false;
 bool timedWakeRender = false;
 bool lastAttemptFailed = false;
 bool quickRecheck = false;
+bool deferredRefresh = false;
 std::function<void(const char*)> stepListener;
 
 void notifyStep(const char* text) {
@@ -408,6 +410,12 @@ uint32_t TesseraeClient::takeQuickRecheckSeconds() {
   const bool want = quickRecheck;
   quickRecheck = false;
   return want ? QUICK_RECHECK_SECONDS : 0;
+}
+void TesseraeClient::deferRefresh() { deferredRefresh = true; }
+uint32_t TesseraeClient::takeDeferredRefreshSeconds() {
+  const bool want = deferredRefresh;
+  deferredRefresh = false;
+  return want ? DEFERRED_REFRESH_SECONDS : 0;
 }
 void TesseraeClient::setStepListener(std::function<void(const char*)> listener) { stepListener = std::move(listener); }
 
