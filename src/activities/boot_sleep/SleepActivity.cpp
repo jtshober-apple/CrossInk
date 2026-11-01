@@ -123,11 +123,11 @@ void* pngSleepOpen(const char* filename, int32_t* size) {
 // before it is pushed to the display.  Only visible when auto-push is enabled,
 // credentials are configured, and the current book has never been pushed.
 // ---------------------------------------------------------------------------
-constexpr int kSyncBadgePad = 6;                     // inner horizontal/vertical padding
-constexpr int kSyncBadgeMargin = 10;                 // margin from screen edge
-constexpr int kSyncBadgeLineWidth = 2;               // border thickness
-constexpr int kTesseraeFooterRightMargin = 18;       // footer inset on the Tesserae dashboard
-constexpr int kTesseraeFooterCenterFromBottom = 62;  // footer vertical centre, px above the bottom edge
+constexpr int kSyncBadgePad = 6;                  // inner horizontal/vertical padding
+constexpr int kSyncBadgeMargin = 10;              // margin from screen edge
+constexpr int kSyncBadgeLineWidth = 2;            // border thickness
+constexpr int kTesseraeFooterRightMargin = 18;    // footer inset on the Tesserae dashboard
+constexpr int kTesseraeHeaderCenterFromTop = 33;  // NOT SYNCED pill: vertical centre of the date line
 
 // Set by renderTesseraeSleepScreen(): the refresh did not complete and the dashboard on screen is old. A refresh also
 // syncs the open book, so this raises the same NOT SYNCED tag as an unsent reading position.
@@ -142,8 +142,8 @@ void drawKoSyncUnsyncedBadge(GfxRenderer& renderer) {
   if (!positionUnsynced && !tesseraeFrameStale) return;
 
   const int fontId = SMALL_FONT_ID;
-  // The Tesserae dashboard reserves a slot at the right of its currently-reading footer for this tag
-  // (see x4-home-render): a labelled pill there, centred on the footer, instead of the corner dash.
+  // The Tesserae dashboard keeps the top right of its date line free for this tag (see x4-home-render): a
+  // labelled pill there, instead of the corner dash.
   const bool inFooterSlot = SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::TESSERAE_SLEEP;
   const char* label = inFooterSlot ? "NOT SYNCED" : "-";  // ASCII dash: "not synced"
   const int textW = renderer.getTextWidth(fontId, label);
@@ -152,8 +152,8 @@ void drawKoSyncUnsyncedBadge(GfxRenderer& renderer) {
   const int badgeH = textH + kSyncBadgePad * 2;
   const int badgeX = inFooterSlot ? renderer.getScreenWidth() - badgeW - kTesseraeFooterRightMargin
                                   : renderer.getScreenWidth() - badgeW - kSyncBadgeMargin;
-  const int badgeY = inFooterSlot ? renderer.getScreenHeight() - kTesseraeFooterCenterFromBottom - badgeH / 2
-                                  : renderer.getScreenHeight() - badgeH - kSyncBadgeMargin;
+  const int badgeY =
+      inFooterSlot ? kTesseraeHeaderCenterFromTop - badgeH / 2 : renderer.getScreenHeight() - badgeH - kSyncBadgeMargin;
 
   const bool inverted =
       SETTINGS.sleepScreenCoverFilter == CrossPointSettings::SLEEP_SCREEN_COVER_FILTER::INVERTED_BLACK_AND_WHITE;
@@ -1013,22 +1013,23 @@ void SleepActivity::renderTesseraeSleepScreen() const {
   // timed-wake path itself (and an unpaired device, which has no wake timer) keeps the inline refresh.
   const bool deferNetwork = !TesseraeClient::isTimedWake() && SETTINGS.tessDeviceToken[0] != '\0' &&
                             SETTINGS.tessAutoRefreshMin != 0 && SETTINGS.tessServerUrl[0] != '\0';
-  const bool showSteps =
-      !deferNetwork && (BoardConfig::isX4Pro() || CROSSINK_APP_DEVICE_X4CLASSIC) && SETTINGS.tessServerUrl[0] != '\0';
-  if (showSteps) {
+  const bool showPopup = (BoardConfig::isX4Pro() || CROSSINK_APP_DEVICE_X4CLASSIC) && SETTINGS.tessServerUrl[0] != '\0';
+  const bool showSteps = showPopup && !deferNetwork;
+  if (showPopup) {
     const bool fromReader = APP_STATE.lastSleepFromReader;
     const auto popupOrientation = sleepPopupOrientation;
     if (fromReader) renderer.setOrientation(popupOrientation);
     Rect last =
         GUI.drawPopup(renderer, (TesseraeClient::isTimedWake() ? tr(STR_UPDATING_DISPLAY) : tr(STR_ENTERING_SLEEP)));
     renderer.setOrientation(GfxRenderer::Orientation::Portrait);
-    TesseraeClient::setStepListener([this, &last, fromReader, popupOrientation](const char* text) {
-      if (fromReader) renderer.setOrientation(popupOrientation);
-      constexpr int kPad = 8;  // popup frame plus a little slack
-      renderer.fillRect(last.x - kPad, last.y - kPad, last.width + kPad * 2, last.height + kPad * 2, false);
-      last = GUI.drawPopup(renderer, text);
-      renderer.setOrientation(GfxRenderer::Orientation::Portrait);
-    });
+    if (showSteps)
+      TesseraeClient::setStepListener([this, &last, fromReader, popupOrientation](const char* text) {
+        if (fromReader) renderer.setOrientation(popupOrientation);
+        constexpr int kPad = 8;  // popup frame plus a little slack
+        renderer.fillRect(last.x - kPad, last.y - kPad, last.width + kPad * 2, last.height + kPad * 2, false);
+        last = GUI.drawPopup(renderer, text);
+        renderer.setOrientation(GfxRenderer::Orientation::Portrait);
+      });
   }
 
   // Pull the freshest dashboard before drawing; on any failure the cached frame below is used.

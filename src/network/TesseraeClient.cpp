@@ -444,11 +444,12 @@ TesseraeClient::Error TesseraeClient::refreshBeforeSleep(const bool timedWake) {
   // Sync the open book first, while the heap is at its largest (TLS needs it). Going to sleep only pushes (the
   // reader is the newest source); a timed wake also pulls, so a book read or listened to elsewhere reaches this
   // reader. Skipped when Wi-Fi was slow: a late sync would hold up the sleep screen.
-  const bool syncing = SETTINGS.koSyncPushOnSleep || (timedWake && SETTINGS.koSyncPullOnWake);
-  if (syncing && millis() - startedMs <= SLEEP_SYNC_LATEST_START_MS) {
+  // A timed wake has nobody waiting on it: it always pushes and pulls, with no time cap.
+  const bool syncing = timedWake || SETTINGS.koSyncPushOnSleep;
+  if (syncing && (timedWake || millis() - startedMs <= SLEEP_SYNC_LATEST_START_MS)) {
     notifyStep((timedWake ? tr(STR_STEP_SYNCING) : tr(STR_STEP_UPLOADING)));
-    const auto synced = KoSyncQuiet::syncBoth(APP_STATE.openEpubPath, SETTINGS.koSyncPushOnSleep != 0,
-                                              timedWake && SETTINGS.koSyncPullOnWake != 0);
+    const auto synced =
+        KoSyncQuiet::syncBoth(APP_STATE.openEpubPath, timedWake || SETTINGS.koSyncPushOnSleep != 0, timedWake);
     LOG_INF(TAG, "refresh: kosync result=%d (timedWake=%d)", static_cast<int>(synced), timedWake);
     // The relay and the server need a moment to redraw the footer from the pushed position: look again shortly.
     quickRecheck = synced == KoSyncQuiet::Result::PUSHED;
@@ -457,7 +458,7 @@ TesseraeClient::Error TesseraeClient::refreshBeforeSleep(const bool timedWake) {
   }
 
   Error err = OK;
-  if (millis() - startedMs > SLEEP_FETCH_LATEST_START_MS) {
+  if (!timedWake && millis() - startedMs > SLEEP_FETCH_LATEST_START_MS) {
     LOG_INF(TAG, "refresh: out of time, showing the cached frame");
     err = NETWORK_ERROR;
   } else {
