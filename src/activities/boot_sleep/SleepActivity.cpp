@@ -8,6 +8,7 @@
 #include <HalClock.h>
 #include <HalDisplay.h>
 #include <HalGPIO.h>
+#include <HalPowerManager.h>
 #include <HalStorage.h>
 #include <I18n.h>
 #include <Memory.h>
@@ -30,6 +31,7 @@
 #include "../reader/BookStatsView.h"
 #include "../reader/EpubReaderActivity.h"
 #include "../reader/EpubReaderUtils.h"
+#include "../reader/ReadingStatsUtils.h"
 #include "../reader/TxtReaderActivity.h"
 #include "../reader/XtcReaderActivity.h"
 #include "AppCapabilities.h"
@@ -1005,6 +1007,143 @@ void SleepActivity::renderDashboardSleepScreen() const {
   renderer.displayBuffer(HalDisplay::HALF_REFRESH, TURN_OFF_SCREEN_AFTER_SLEEP_REFRESH);
 }
 
+// Stand-in drawn on the device at power-off, before the dashboard has been refreshed: the clock, date and battery
+// are the device's own, and the book is whatever is open. The full dashboard replaces it after the next refresh.
+namespace {
+void drawSevenSegDigit(const GfxRenderer& r, const int x, const int y, const int w, const int h, const int t,
+                       const int digit) {
+  static constexpr uint8_t kSegments[10] = {0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F};  // a..g
+  const uint8_t m = kSegments[digit % 10];
+  const int half = h / 2;
+  if (m & 0x01) r.fillRect(x + t / 2, y, w - t, t, true);                 // a
+  if (m & 0x02) r.fillRect(x + w - t, y + t / 2, t, half - t / 2, true);  // b
+  if (m & 0x04) r.fillRect(x + w - t, y + half, t, half - t / 2, true);   // c
+  if (m & 0x08) r.fillRect(x + t / 2, y + h - t, w - t, t, true);         // d
+  if (m & 0x10) r.fillRect(x, y + half, t, half - t / 2, true);           // e
+  if (m & 0x20) r.fillRect(x, y + t / 2, t, half - t / 2, true);          // f
+  if (m & 0x40) r.fillRect(x + t / 2, y + half - t / 2, w - t, t, true);  // g
+}
+}  // namespace
+
+void SleepActivity::renderPowerOffScreen() const {
+  renderer.setOrientation(GfxRenderer::Orientation::Portrait);
+  renderer.clearScreen();
+  const int W = renderer.getScreenWidth();
+  const int H = renderer.getScreenHeight();
+  constexpr int kMargin = 18;
+
+  // Top half: status, clock, date, battery.
+  renderer.drawCenteredText(UI_12_FONT_ID, 26, "Going to sleep...", true, EpdFontFamily::BOLD);
+
+  ReadingStatsDateTime now;
+  if (getCurrentLocalReadingStatsDateTime(now) && now.isValid()) {
+    const int hour12 = now.hour % 12 == 0 ? 12 : now.hour % 12;
+    constexpr int dw = 84, dh = 150, dt = 18, gap = 14, colonW = 24;
+    const bool tens = hour12 >= 10;
+    const int totalW = (tens ? dw + gap : 0) + dw + gap + colonW + gap + dw + gap + dw;
+    int x = (W - totalW) / 2;
+    const int y = 90;
+    if (tens) {
+      drawSevenSegDigit(renderer, x, y, dw, dh, dt, hour12 / 10);
+      x += dw + gap;
+    }
+    drawSevenSegDigit(renderer, x, y, dw, dh, dt, hour12 % 10);
+    x += dw + gap;
+    renderer.fillRect(x, y + dh / 3 - 8, colonW, colonW, true);
+    renderer.fillRect(x, y + 2 * dh / 3 - 8, colonW, colonW, true);
+    x += colonW + gap;
+    drawSevenSegDigit(renderer, x, y, dw, dh, dt, now.minute / 10);
+    x += dw + gap;
+    drawSevenSegDigit(renderer, x, y, dw, dh, dt, now.minute % 10);
+    renderer.drawCenteredText(UI_12_FONT_ID, y + dh + 14, now.hour >= 12 ? "PM" : "AM", true, EpdFontFamily::BOLD);
+
+    static const char* const kDays[] = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
+    static const char* const kMonths[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                          "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+    if (now.date.month >= 1 && now.date.month <= 12) {
+      char date[32];
+      snprintf(date, sizeof(date), "%s %s %u", kDays[readingStatsDayOfWeekIndex(now.date) % 7],
+               kMonths[now.date.month - 1], static_cast<unsigned>(now.date.day));
+      renderer.drawCenteredText(UI_12_FONT_ID, y + dh + 56, date, true, EpdFontFamily::BOLD);
+    }
+  }
+
+  const int battery = powerManager.getBatteryPercentage();
+  {
+    constexpr int bw = 34, bh = 16;
+    char pct[8];
+    snprintf(pct, sizeof(pct), "%d%%", battery);
+    const int textW = renderer.getTextWidth(UI_10_FONT_ID, pct, EpdFontFamily::BOLD);
+    const int bx = (W - (bw + 4 + 8 + textW)) / 2;
+    const int by = 332;
+    renderer.drawRect(bx, by, bw, bh, 2, true);
+    renderer.fillRect(bx + bw, by + 4, 3, bh - 8, true);
+    renderer.fillRect(bx + 4, by + 4, std::max(1, (bw - 8) * std::min(100, std::max(0, battery)) / 100), bh - 8, true);
+    renderer.drawText(UI_10_FONT_ID, bx + bw + 12, by - 1, pct, true, EpdFontFamily::BOLD);
+  }
+
+  renderer.fillRect(kMargin, H / 2 - 2, W - kMargin * 2, 4, true);
+
+  // Bottom half: the open book, as on the dashboard's footer.
+  const std::string& path = currentBookPath.empty() ? APP_STATE.openEpubPath : currentBookPath;
+  if (!path.empty()) {
+    RecentBook book = recentBookForPath(path);
+    std::string coverPath = SleepCoverAssets::cachedDashboardCoverPathFor(path);
+    if (coverPath.empty()) coverPath = book.coverBmpPath;
+
+    const int boxX = kMargin, boxY = H / 2 + 28, boxW = 200, boxH = H / 2 - 28 - 40;
+    int coverRight = boxX + boxW;
+    FsFile file;
+    if (!coverPath.empty() && Storage.openFileForRead("SLP", coverPath, file)) {
+      Bitmap bitmap(file);
+      if (bitmap.parseHeaders() == BmpReaderError::Ok && bitmap.getWidth() > 0 && bitmap.getHeight() > 0) {
+        const float scale =
+            std::min(static_cast<float>(boxW) / bitmap.getWidth(), static_cast<float>(boxH) / bitmap.getHeight());
+        const int cw = static_cast<int>(bitmap.getWidth() * scale);
+        const int ch = static_cast<int>(bitmap.getHeight() * scale);
+        const int cy = boxY + (boxH - ch) / 2;
+        renderer.drawBitmap(bitmap, boxX, cy, cw, ch);
+        renderer.drawRect(boxX, cy, cw, ch, 1, true);
+        coverRight = boxX + cw;
+      }
+      file.close();
+    }
+
+    const int tx = coverRight + 20;
+    const int tw = W - tx - kMargin;
+    const auto titleLines = renderer.wrappedText(UI_12_FONT_ID, book.title.c_str(), tw, 4, EpdFontFamily::BOLD);
+    const auto authorLines = renderer.wrappedText(UI_10_FONT_ID, book.author.c_str(), tw, 2);
+    const int titleH = renderer.getLineHeight(UI_12_FONT_ID);
+    const int authorH = renderer.getLineHeight(UI_10_FONT_ID);
+    const float percent = RecentBookProgress::loadPercent(book);
+    const bool hasPercent = percent >= 0.0f;
+    const int blockH = static_cast<int>(titleLines.size()) * titleH + 10 +
+                       static_cast<int>(authorLines.size()) * authorH + (hasPercent ? 28 + titleH + 12 + 18 : 0);
+    int ty = boxY + std::max(0, (boxH - blockH) / 2);
+    for (const auto& line : titleLines) {
+      renderer.drawText(UI_12_FONT_ID, tx, ty, line.c_str(), true, EpdFontFamily::BOLD);
+      ty += titleH;
+    }
+    ty += 10;
+    for (const auto& line : authorLines) {
+      renderer.drawText(UI_10_FONT_ID, tx, ty, line.c_str());
+      ty += authorH;
+    }
+    if (hasPercent) {
+      ty += 28;
+      char label[24];
+      snprintf(label, sizeof(label), "Reading \xC2\xB7 %d%%", static_cast<int>(percent + 0.5f));
+      renderer.drawText(UI_12_FONT_ID, tx, ty, label, true, EpdFontFamily::BOLD);
+      ty += titleH + 12;
+      renderer.drawRect(tx, ty, tw, 18, 2, true);
+      renderer.fillRect(tx + 3, ty + 3, std::max(0, (tw - 6) * std::min(100, static_cast<int>(percent + 0.5f)) / 100),
+                        12, true);
+    }
+  }
+
+  renderer.displayBuffer(HalDisplay::HALF_REFRESH, TURN_OFF_SCREEN_AFTER_SLEEP_REFRESH);
+}
+
 void SleepActivity::renderTesseraeSleepScreen() const {
   // The X4 Pro/Classic skip the "Entering sleep" popup, which was fine while sleeping was instant. The refresh
   // below takes seconds, so say what is happening instead of looking frozen.
@@ -1015,6 +1154,12 @@ void SleepActivity::renderTesseraeSleepScreen() const {
                             SETTINGS.tessAutoRefreshMin != 0 && SETTINGS.tessServerUrl[0] != '\0';
   const bool showPopup = (BoardConfig::isX4Pro() || CROSSINK_APP_DEVICE_X4CLASSIC) && SETTINGS.tessServerUrl[0] != '\0';
   const bool showSteps = showPopup && !deferNetwork;
+  if (deferNetwork) {
+    // Power-off: draw the stand-in now and let the short timed wake bring in the real dashboard.
+    TesseraeClient::deferRefresh();
+    renderPowerOffScreen();
+    return;
+  }
   if (showPopup) {
     const bool fromReader = APP_STATE.lastSleepFromReader;
     const auto popupOrientation = sleepPopupOrientation;
@@ -1033,11 +1178,7 @@ void SleepActivity::renderTesseraeSleepScreen() const {
   }
 
   // Pull the freshest dashboard before drawing; on any failure the cached frame below is used.
-  if (deferNetwork) {
-    TesseraeClient::deferRefresh();
-  } else {
-    TesseraeClient::refreshBeforeSleep();
-  }
+  TesseraeClient::refreshBeforeSleep();
   if (showSteps) {
     TesseraeClient::setStepListener(nullptr);
   }
