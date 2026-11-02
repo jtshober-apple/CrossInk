@@ -139,8 +139,19 @@ int postJson(const std::string& url, const std::string& body, bool withToken, st
 constexpr const char* FETCH_STAMP_PATH = "/.crosspoint/tesserae_fetched";
 // Exists once the sleep screen was drawn with the stale-dashboard mark; cleared by the next good fetch.
 constexpr const char* STALE_DRAWN_PATH = "/.crosspoint/tesserae_stale_drawn";
+// Exists while the last refresh attempt failed (Wi-Fi, KoSync or the dashboard download); survives deep sleep so the
+// sleep screen can say the reader is out of sync.
+constexpr const char* FAILED_PATH = "/.crosspoint/tesserae_failed";
 constexpr int64_t STALE_AFTER_MINUTES = 24 * 60;
-constexpr int64_t RETRY_STALE_AFTER_MINUTES = 60;
+
+void setFailureMark(const bool failed) {
+  if (!failed) {
+    Storage.remove(FAILED_PATH);
+    return;
+  }
+  FsFile file;
+  if (Storage.openFileForWrite("TESS", FAILED_PATH, file)) file.close();
+}
 
 void stampFetchTime() {
   Storage.remove(STALE_DRAWN_PATH);
@@ -459,6 +470,7 @@ TesseraeClient::Error TesseraeClient::refreshBeforeSleep(const bool timedWake) {
   if (!alreadyConnected && !(timedWake ? connectSavedWifi(TIMED_WIFI_TIMEOUT_MS, 2) : connectSavedWifi())) {
     wifiOff();
     lastAttemptFailed = true;
+    setFailureMark(true);
     return NETWORK_ERROR;
   }
 
@@ -472,6 +484,7 @@ TesseraeClient::Error TesseraeClient::refreshBeforeSleep(const bool timedWake) {
   // reader is the newest source); a timed wake also pulls, so a book read or listened to elsewhere reaches this
   // reader. Skipped when Wi-Fi was slow: a late sync would hold up the sleep screen.
   // A timed wake has nobody waiting on it: it always pushes and pulls, with no time cap.
+  bool syncFailed = false;
   const bool syncing = timedWake || SETTINGS.koSyncPushOnSleep;
   if (syncing && (timedWake || millis() - startedMs <= SLEEP_SYNC_LATEST_START_MS)) {
     notifyStep((timedWake ? tr(STR_STEP_SYNCING) : tr(STR_STEP_UPLOADING)));
@@ -480,6 +493,7 @@ TesseraeClient::Error TesseraeClient::refreshBeforeSleep(const bool timedWake) {
     LOG_INF(TAG, "refresh: kosync result=%d (timedWake=%d)", static_cast<int>(synced), timedWake);
     // The relay and the server need a moment to redraw the footer from the pushed position: look again shortly.
     quickRecheck = synced == KoSyncQuiet::Result::PUSHED;
+    syncFailed = synced == KoSyncQuiet::Result::FAILED;
   } else if (syncing) {
     LOG_INF(TAG, "refresh: kosync skipped, Wi-Fi took %u ms", static_cast<unsigned>(millis() - startedMs));
   }
@@ -508,7 +522,8 @@ TesseraeClient::Error TesseraeClient::refreshBeforeSleep(const bool timedWake) {
       }
     }
   }
-  lastAttemptFailed = err != OK;
+  lastAttemptFailed = err != OK || syncFailed;
+  setFailureMark(lastAttemptFailed);
 
   notifyStep(tr(STR_ENTERING_SLEEP));
   if (!alreadyConnected) wifiOff();
@@ -523,6 +538,7 @@ void TesseraeClient::markStaleDrawn() {
 }
 
 bool TesseraeClient::frameIsStale() {
+  if (Storage.exists(FAILED_PATH)) return true;  // any failed refresh means dashboard and reading progress disagree
   int64_t now = 0;
   if (!rtcMinutesSinceEpoch(now)) return false;
   FsFile file;
@@ -532,6 +548,6 @@ bool TesseraeClient::frameIsStale() {
   file.close();
   const long long stamp = atoll(buf);
   if (stamp <= 0) return true;
-  // A day without a refresh is always stale; after a failed attempt an hour is enough to say so.
-  return now - stamp > (lastAttemptFailed ? RETRY_STALE_AFTER_MINUTES : STALE_AFTER_MINUTES);
+  // A failed attempt already said so above; otherwise a day without any refresh is stale.
+  return now - stamp > STALE_AFTER_MINUTES;
 }
