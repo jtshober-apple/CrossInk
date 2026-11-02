@@ -1039,6 +1039,7 @@ void SleepActivity::renderPowerOffScreen() const {
   const int W = renderer.getScreenWidth();
   const int H = renderer.getScreenHeight();
   constexpr int kMargin = 18;
+  constexpr int kInfoLineY = 40 + 150 + 12;  // date and battery share this line, below the clock
 
   // Top half: status, clock, date, battery.
   renderer.drawCenteredText(UI_10_FONT_ID, 8, "Going to sleep...", true, EpdFontFamily::BOLD);
@@ -1068,18 +1069,20 @@ void SleepActivity::renderPowerOffScreen() const {
         x += colonW + gap;
       }
     }
+    // AM/PM sits just right of the last digit, on its bottom edge.
+    renderer.drawText(UI_10_FONT_ID, x - gap + 8, y + dh - renderer.getLineHeight(UI_10_FONT_ID),
+                      now.hour >= 12 ? "PM" : "AM", true, EpdFontFamily::BOLD);
     static const char* const kDays[] = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
     static const char* const kMonths[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
     char line[48];
     if (now.date.month >= 1 && now.date.month <= 12) {
-      snprintf(line, sizeof(line), "%s \xC2\xB7 %s %s %u", now.hour >= 12 ? "PM" : "AM",
-               kDays[readingStatsDayOfWeekIndex(now.date) % 7], kMonths[now.date.month - 1],
-               static_cast<unsigned>(now.date.day));
+      snprintf(line, sizeof(line), "%s %s %u", kDays[readingStatsDayOfWeekIndex(now.date) % 7],
+               kMonths[now.date.month - 1], static_cast<unsigned>(now.date.day));
     } else {
-      snprintf(line, sizeof(line), "%s", now.hour >= 12 ? "PM" : "AM");
+      line[0] = '\0';
     }
-    renderer.drawText(UI_12_FONT_ID, kMargin, y + dh + 12, line, true, EpdFontFamily::BOLD);
+    renderer.drawText(UI_12_FONT_ID, kMargin, kInfoLineY, line, true, EpdFontFamily::BOLD);
   }
 
   const int battery = powerManager.getBatteryPercentage();
@@ -1089,11 +1092,13 @@ void SleepActivity::renderPowerOffScreen() const {
     snprintf(pct, sizeof(pct), "%d%%", battery);
     const int textW = renderer.getTextWidth(UI_10_FONT_ID, pct, EpdFontFamily::BOLD);
     const int bx = W - kMargin - (bw + 12 + textW);
-    const int by = 40 + 150 + 16;
+    const int lineCentre = kInfoLineY + renderer.getLineHeight(UI_12_FONT_ID) / 2;
+    const int by = lineCentre - bh / 2;
     renderer.drawRect(bx, by, bw, bh, 2, true);
     renderer.fillRect(bx + bw, by + 4, 3, bh - 8, true);
     renderer.fillRect(bx + 4, by + 4, std::max(1, (bw - 8) * std::min(100, std::max(0, battery)) / 100), bh - 8, true);
-    renderer.drawText(UI_10_FONT_ID, bx + bw + 12, by - 1, pct, true, EpdFontFamily::BOLD);
+    renderer.drawText(UI_10_FONT_ID, bx + bw + 12, lineCentre - renderer.getLineHeight(UI_10_FONT_ID) / 2, pct, true,
+                      EpdFontFamily::BOLD);
   }
 
   renderer.fillRect(kMargin, 244, W - kMargin * 2, 4, true);
@@ -1106,7 +1111,20 @@ void SleepActivity::renderPowerOffScreen() const {
     constexpr int kCoverW = DashboardMetrics::homeCoverImageWidth;
     constexpr int kCoverH = DashboardMetrics::homeCoverImageHeight;
     const auto existing = [](const std::string& p) { return !p.empty() && Storage.exists(p.c_str()); };
+    // A cover bitmap is only ever drawn at its own size or smaller, so make one as big as the space allows.
+    constexpr int kBigCoverW = 272;
+    constexpr int kBigCoverH = 408;
     const auto resolveCover = [&]() -> std::string {
+      if (FsHelpers::hasEpubExtension(path)) {
+        Epub epub(path, "/.crosspoint");
+        const std::string big = epub.getAdaptiveThumbBmpPath(kBigCoverW, kBigCoverH);
+        if (existing(big)) return big;
+        if (epub.load(/*buildIfMissing=*/true, /*skipLoadingCss=*/true, Epub::XLocationLoadMode::Skip) &&
+            epub.generateAdaptiveThumbBmp(kBigCoverW, kBigCoverH, &renderer, SETTINGS.getReaderFontId()) &&
+            existing(big)) {
+          return big;
+        }
+      }
       if (FsHelpers::hasEpubExtension(path)) {
         const std::string adaptive = Epub(path, "/.crosspoint").getAdaptiveThumbBmpPath(kCoverW, kCoverH);
         if (existing(adaptive)) return adaptive;
@@ -1128,7 +1146,7 @@ void SleepActivity::renderPowerOffScreen() const {
       coverPath = resolveCover();
     }
 
-    const int boxX = kMargin, boxY = 264, boxW = 240, boxH = H - 264 - 24;
+    const int boxX = kMargin, boxY = 264, boxW = kBigCoverW, boxH = H - 264 - 24;
     int coverRight = boxX + boxW;
     int coverTop = boxY, coverHeight = boxH;
     FsFile file;
@@ -1149,7 +1167,7 @@ void SleepActivity::renderPowerOffScreen() const {
       file.close();
     }
 
-    const int tx = coverRight + 20;
+    const int tx = coverRight + 18;
     const int tw = W - tx - kMargin;
     const auto titleLines = renderer.wrappedText(UI_12_FONT_ID, book.title.c_str(), tw, 6, EpdFontFamily::BOLD);
     const auto authorLines = renderer.wrappedText(UI_10_FONT_ID, book.author.c_str(), tw, 2);
