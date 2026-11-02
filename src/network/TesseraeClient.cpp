@@ -20,6 +20,7 @@
 
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
+#include "RecentBooksStore.h"
 #include "WifiCredentialStore.h"
 #include "network/KoSyncQuiet.h"
 #include "network/WifiUtils.h"
@@ -354,6 +355,16 @@ TesseraeClient::Error TesseraeClient::sendHeartbeat(uint16_t* nextPollSeconds) {
   JsonDocument bodyDoc;
   bodyDoc["rssi"] = WiFi.RSSI();
   bodyDoc["battery_pct"] = powerManager.getBatteryPercentage();
+  // The open book, so the dashboard footer follows what is being read rather than guessing from server positions.
+  {
+    const std::string& openPath = APP_STATE.openEpubPath;
+    for (const auto& book : RECENT_BOOKS.getBooks()) {
+      if (book.path == openPath && !book.title.empty()) {
+        bodyDoc["book_title"] = book.title;
+        break;
+      }
+    }
+  }
   bodyDoc["ip"] = ipBuf;
   bodyDoc["mac"] = macBuf;
   bodyDoc["fw_version"] = FIRMWARE_ID;
@@ -439,6 +450,12 @@ TesseraeClient::Error TesseraeClient::refreshBeforeSleep(const bool timedWake) {
     wifiOff();
     lastAttemptFailed = true;
     return NETWORK_ERROR;
+  }
+
+  // Tell the server which book is open before anything slow, so it can start redrawing the footer for it.
+  if (timedWake) {
+    uint16_t ignoredPoll = 0;
+    sendHeartbeat(&ignoredPoll);
   }
 
   // Sync the open book first, while the heap is at its largest (TLS needs it). Going to sleep only pushes (the
