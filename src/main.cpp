@@ -1095,6 +1095,8 @@ static uint32_t tesseraeTimedWakeSeconds() {
     return 0;
   }
   if (powerManager.getBatteryPercentage() < 15) return 0;
+  const uint32_t retry = TesseraeClient::retryAfterFailureSeconds();
+  if (retry != 0) return retry;
   const uint32_t deferred = TesseraeClient::takeDeferredRefreshSeconds();
   if (deferred != 0) return deferred;
   const uint32_t recheck = TesseraeClient::takeQuickRecheckSeconds();

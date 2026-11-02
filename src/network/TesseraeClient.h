@@ -98,6 +98,9 @@ class TesseraeClient {
   // Seconds until a follow-up check is wanted (a push just happened and the dashboard may lag it), else 0.
   static uint32_t takeQuickRecheckSeconds();
 
+  /** Seconds until a retry when the refresh that just ran failed (5 min), else 0. */
+  static uint32_t retryAfterFailureSeconds();
+
   /** Power-off shows the cached frame at once; the sync and fetch run on a short timed wake instead. */
   static void deferRefresh();
   /** Seconds until that deferred refresh (once), or 0 when none is pending. */
