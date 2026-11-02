@@ -20,6 +20,7 @@
 
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
+#include "RecentBookProgress.h"
 #include "RecentBooksStore.h"
 #include "WifiCredentialStore.h"
 #include "network/KoSyncQuiet.h"
@@ -354,6 +355,17 @@ TesseraeClient::Error TesseraeClient::fetchFrame() {
 
 // ── sendHeartbeat ─────────────────────────────────────────────────────────────
 
+namespace {
+// The percentage the sleep screens draw for the open book (cached, so cheap and identical); -1 if unknown.
+float openBookPercent() {
+  const std::string& openPath = APP_STATE.openEpubPath;
+  for (const auto& book : RECENT_BOOKS.getBooks()) {
+    if (book.path == openPath) return RecentBookProgress::loadCachedEpubPercent(book);
+  }
+  return -1.0f;
+}
+}  // namespace
+
 TesseraeClient::Error TesseraeClient::sendHeartbeat(uint16_t* nextPollSeconds) {
   if (SETTINGS.tessServerUrl[0] == '\0') return NOT_CONFIGURED;
   if (SETTINGS.tessDeviceToken[0] == '\0') return NOT_PAIRED;
@@ -381,6 +393,8 @@ TesseraeClient::Error TesseraeClient::sendHeartbeat(uint16_t* nextPollSeconds) {
     for (const auto& book : RECENT_BOOKS.getBooks()) {
       if (book.path == openPath && !book.title.empty()) {
         bodyDoc["book_title"] = book.title;
+        const float pct = openBookPercent();
+        if (pct >= 0.0f) bodyDoc["book_pct"] = static_cast<int>(pct * 10.0f + 0.5f) / 10.0f;
         break;
       }
     }
@@ -485,6 +499,7 @@ TesseraeClient::Error TesseraeClient::refreshBeforeSleep(const bool timedWake) {
   // reader. Skipped when Wi-Fi was slow: a late sync would hold up the sleep screen.
   // A timed wake has nobody waiting on it: it always pushes and pulls, with no time cap.
   bool syncFailed = false;
+  const float pctBeforeSync = openBookPercent();
   const bool syncing = timedWake || SETTINGS.koSyncPushOnSleep;
   if (syncing && (timedWake || millis() - startedMs <= SLEEP_SYNC_LATEST_START_MS)) {
     notifyStep((timedWake ? tr(STR_STEP_SYNCING) : tr(STR_STEP_UPLOADING)));
@@ -494,6 +509,8 @@ TesseraeClient::Error TesseraeClient::refreshBeforeSleep(const bool timedWake) {
     // The relay and the server need a moment to redraw the footer from the pushed position: look again shortly.
     quickRecheck = synced == KoSyncQuiet::Result::PUSHED;
     syncFailed = synced == KoSyncQuiet::Result::FAILED;
+    // A pull moved this reader: the dashboard is told the new percentage in the heartbeat after the fetch.
+    if (openBookPercent() != pctBeforeSync) quickRecheck = true;
   } else if (syncing) {
     LOG_INF(TAG, "refresh: kosync skipped, Wi-Fi took %u ms", static_cast<unsigned>(millis() - startedMs));
   }
