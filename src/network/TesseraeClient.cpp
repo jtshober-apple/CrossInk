@@ -20,9 +20,9 @@
 
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
-#include "RecentBookProgress.h"
 #include "RecentBooksStore.h"
 #include "WifiCredentialStore.h"
+#include "activities/home/RecentBookProgress.h"
 #include "network/KoSyncQuiet.h"
 #include "network/WifiUtils.h"
 #include "util/RtcMinutes.h"
