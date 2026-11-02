@@ -1041,7 +1041,7 @@ void SleepActivity::renderPowerOffScreen() const {
   constexpr int kMargin = 18;
 
   // Top half: status, clock, date, battery.
-  renderer.drawCenteredText(UI_12_FONT_ID, 26, "Going to sleep...", true, EpdFontFamily::BOLD);
+  renderer.drawCenteredText(UI_10_FONT_ID, 8, "Going to sleep...", true, EpdFontFamily::BOLD);
 
   ReadingStatsDateTime now;
   if (getCurrentLocalReadingStatsDateTime(now) && now.isValid()) {
@@ -1056,7 +1056,7 @@ void SleepActivity::renderPowerOffScreen() const {
       shown++;
     }
     int x = (W - totalW) / 2;
-    const int y = 90;
+    const int y = 40;
     for (int k = 0; k < 4; k++) {
       const int d = digits[k];
       if (d < 0) continue;
@@ -1068,17 +1068,18 @@ void SleepActivity::renderPowerOffScreen() const {
         x += colonW + gap;
       }
     }
-    renderer.drawCenteredText(UI_12_FONT_ID, y + dh + 14, now.hour >= 12 ? "PM" : "AM", true, EpdFontFamily::BOLD);
-
     static const char* const kDays[] = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
     static const char* const kMonths[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+    char line[48];
     if (now.date.month >= 1 && now.date.month <= 12) {
-      char date[32];
-      snprintf(date, sizeof(date), "%s %s %u", kDays[readingStatsDayOfWeekIndex(now.date) % 7],
-               kMonths[now.date.month - 1], static_cast<unsigned>(now.date.day));
-      renderer.drawCenteredText(UI_12_FONT_ID, y + dh + 56, date, true, EpdFontFamily::BOLD);
+      snprintf(line, sizeof(line), "%s \xC2\xB7 %s %s %u", now.hour >= 12 ? "PM" : "AM",
+               kDays[readingStatsDayOfWeekIndex(now.date) % 7], kMonths[now.date.month - 1],
+               static_cast<unsigned>(now.date.day));
+    } else {
+      snprintf(line, sizeof(line), "%s", now.hour >= 12 ? "PM" : "AM");
     }
+    renderer.drawText(UI_12_FONT_ID, kMargin, y + dh + 12, line, true, EpdFontFamily::BOLD);
   }
 
   const int battery = powerManager.getBatteryPercentage();
@@ -1087,17 +1088,17 @@ void SleepActivity::renderPowerOffScreen() const {
     char pct[8];
     snprintf(pct, sizeof(pct), "%d%%", battery);
     const int textW = renderer.getTextWidth(UI_10_FONT_ID, pct, EpdFontFamily::BOLD);
-    const int bx = (W - (bw + 4 + 8 + textW)) / 2;
-    const int by = 332;
+    const int bx = W - kMargin - (bw + 12 + textW);
+    const int by = 40 + 150 + 16;
     renderer.drawRect(bx, by, bw, bh, 2, true);
     renderer.fillRect(bx + bw, by + 4, 3, bh - 8, true);
     renderer.fillRect(bx + 4, by + 4, std::max(1, (bw - 8) * std::min(100, std::max(0, battery)) / 100), bh - 8, true);
     renderer.drawText(UI_10_FONT_ID, bx + bw + 12, by - 1, pct, true, EpdFontFamily::BOLD);
   }
 
-  renderer.fillRect(kMargin, H / 2 - 2, W - kMargin * 2, 4, true);
+  renderer.fillRect(kMargin, 244, W - kMargin * 2, 4, true);
 
-  // Bottom half: the open book, as on the dashboard's footer.
+  // Bottom three quarters: the open book, as on the dashboard's footer.
   const std::string& path = currentBookPath.empty() ? APP_STATE.openEpubPath : currentBookPath;
   if (!path.empty()) {
     RecentBook book = recentBookForPath(path);
@@ -1114,8 +1115,8 @@ void SleepActivity::renderPowerOffScreen() const {
       for (const auto& t : templates) {
         if (t.empty()) continue;
         for (const std::string& candidate :
-             {UITheme::getCoverThumbPath(t, kCoverW, kCoverH),
-              UITheme::getCoverThumbPath(t, UITheme::getInstance().getMetrics().homeCoverHeight), t}) {
+             {UITheme::getCoverThumbPath(t, UITheme::getInstance().getMetrics().homeCoverHeight),
+              UITheme::getCoverThumbPath(t, kCoverW, kCoverH), t}) {
           if (existing(candidate)) return candidate;
         }
       }
@@ -1127,8 +1128,9 @@ void SleepActivity::renderPowerOffScreen() const {
       coverPath = resolveCover();
     }
 
-    const int boxX = kMargin, boxY = H / 2 + 28, boxW = 200, boxH = H / 2 - 28 - 40;
+    const int boxX = kMargin, boxY = 264, boxW = 240, boxH = H - 264 - 24;
     int coverRight = boxX + boxW;
+    int coverTop = boxY, coverHeight = boxH;
     FsFile file;
     if (!coverPath.empty() && Storage.openFileForRead("SLP", coverPath, file)) {
       Bitmap bitmap(file);
@@ -1141,13 +1143,15 @@ void SleepActivity::renderPowerOffScreen() const {
         renderer.drawBitmap(bitmap, boxX, cy, cw, ch);
         renderer.drawRect(boxX, cy, cw, ch, 1, true);
         coverRight = boxX + cw;
+        coverTop = cy;
+        coverHeight = ch;
       }
       file.close();
     }
 
     const int tx = coverRight + 20;
     const int tw = W - tx - kMargin;
-    const auto titleLines = renderer.wrappedText(UI_12_FONT_ID, book.title.c_str(), tw, 4, EpdFontFamily::BOLD);
+    const auto titleLines = renderer.wrappedText(UI_12_FONT_ID, book.title.c_str(), tw, 6, EpdFontFamily::BOLD);
     const auto authorLines = renderer.wrappedText(UI_10_FONT_ID, book.author.c_str(), tw, 2);
     const int titleH = renderer.getLineHeight(UI_12_FONT_ID);
     const int authorH = renderer.getLineHeight(UI_10_FONT_ID);
@@ -1155,7 +1159,7 @@ void SleepActivity::renderPowerOffScreen() const {
     const bool hasPercent = percent >= 0.0f;
     const int blockH = static_cast<int>(titleLines.size()) * titleH + 10 +
                        static_cast<int>(authorLines.size()) * authorH + (hasPercent ? 28 + 4 + 22 : 0);
-    int ty = boxY + std::max(0, (boxH - blockH) / 2);
+    int ty = coverTop + std::max(0, (coverHeight - blockH) / 2);
     for (const auto& line : titleLines) {
       renderer.drawText(UI_12_FONT_ID, tx, ty, line.c_str(), true, EpdFontFamily::BOLD);
       ty += titleH;
