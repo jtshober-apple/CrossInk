@@ -34,6 +34,7 @@ class TesseraeClient {
     SERVER_ERROR,
     LOW_MEMORY,
     INVALID_RESPONSE,
+    ABORTED,  // the user pressed Power during a background refresh; nothing was marked failed
   };
 
   static constexpr const char* TESSERAE_CACHE_PATH = "/.crosspoint/tesserae_frame.bmp";
@@ -107,6 +108,8 @@ class TesseraeClient {
   static uint32_t takeDeferredRefreshSeconds();
   // Called with a short status line as refreshBeforeSleep() moves through its steps (the sleep screen shows it).
   static void setStepListener(std::function<void(const char*)> listener);
+  // Polled between the steps of a background refresh (Wi-Fi, sync, fetch); true abandons it with ABORTED.
+  static void setAbortCheck(std::function<bool()> check);
 
  private:
   TesseraeClient() = delete;

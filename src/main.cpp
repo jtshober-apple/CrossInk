@@ -1220,10 +1220,28 @@ void setupDisplayAndFonts(const bool seamless, const bool loadReaderResources, c
 // Woken by the sleep timer, not by a button: fetch the dashboard, redraw only if it changed, and go straight
 // back to sleep. Never returns. Deliberately leaves APP_STATE alone so the next button wake resumes exactly
 // where the reader was put to sleep.
+// Returns only when the user pressed Power during the refresh: the caller then boots normally instead of making them
+// wait for the dashboard redraw and a second press. Every other path ends in deep sleep.
 static void timedWakeRefreshAndResleep() {
   LOG_INF("BOOT", "Timed wake: refreshing Tesserae dashboard");
   TesseraeClient::setTimedWake(true);
+  TesseraeClient::setAbortCheck([]() {
+    static uint32_t heldSince = 0;
+    gpio.update();
+    if (!gpio.isPressed(HalGPIO::BTN_POWER)) {
+      heldSince = 0;
+      return false;
+    }
+    if (heldSince == 0) heldSince = millis();
+    return SETTINGS.shortPowerPressWakes() || millis() - heldSince >= CrossPointSettings::POWER_BUTTON_LONG_PRESS_MS;
+  });
   const auto err = TesseraeClient::refreshBeforeSleep(/*timedWake=*/true);
+  TesseraeClient::setAbortCheck(nullptr);
+  if (err == TesseraeClient::ABORTED) {
+    LOG_INF("BOOT", "Timed wake: Power pressed, booting normally");
+    TesseraeClient::setTimedWake(false);
+    return;
+  }
   // A failed refresh normally leaves the panel alone, but once the picture has gone stale it must say so.
   const bool redrawStale = err != TesseraeClient::OK && TesseraeClient::staleMarkNeedsRedraw();
   if (err == TesseraeClient::OK || redrawStale) {
@@ -1397,14 +1415,19 @@ void setup() {
   SETTINGS.loadFromFile();
   Storage.installDateTimeCallback(&SETTINGS.clockUtcOffsetQ);
   APP_STATE.loadFromFile();
+  bool pressedDuringBackgroundWake = false;
   if (rawWakeupCause == ESP_SLEEP_WAKEUP_TIMER && !isSilentReboot) {
-    timedWakeRefreshAndResleep();  // does not return
+    timedWakeRefreshAndResleep();  // returns only if Power was pressed meanwhile
+    pressedDuringBackgroundWake = true;
+    wakePowerReleasePending = true;
+    mappedInputManager.suppressNextPowerRelease();
+    mappedInputManager.suppressNextPowerConfirmRelease();
   }
   mirrorWakeShortPressToNvs();
   // Needs SETTINGS for the clock's UTC offset, so it cannot run any earlier.
   BatteryDiagnosticLog::record(BatteryDiagnosticLog::Event::Wake, BoardConfig::ACTIVE.name,
                                wakeupRouteName(wakeupReason));
-  const bool isSleepWake = wakeupReason == HalGPIO::WakeupReason::PowerButton;
+  const bool isSleepWake = wakeupReason == HalGPIO::WakeupReason::PowerButton || pressedDuringBackgroundWake;
   // Quiet pull: the previous sleep screen stays up while the radio fetches the server position, and the book then
   // opens at the right page. A failure is reported by the reader as a toast.
   // With the dashboard as the sleep screen, the background wakes already pull; a blocking pull here only delays

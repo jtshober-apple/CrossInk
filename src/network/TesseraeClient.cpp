@@ -52,6 +52,9 @@ constexpr uint32_t QUICK_RECHECK_SECONDS = 75;
 constexpr uint32_t DEFERRED_REFRESH_SECONDS = 15;
 
 // Blocking join of the last-used (else first) saved network. Returns true once connected.
+std::function<bool()> abortCheck;
+bool abortRequested() { return abortCheck && abortCheck(); }
+
 bool connectSavedWifi(const uint32_t timeoutMs = SLEEP_WIFI_TIMEOUT_MS, const int attempts = 1) {
   std::optional<WifiCredential> cred;
   const std::string last = WIFI_STORE.getLastConnectedSsid();
@@ -73,6 +76,7 @@ bool connectSavedWifi(const uint32_t timeoutMs = SLEEP_WIFI_TIMEOUT_MS, const in
     const uint32_t start = millis();
     while (millis() - start < timeoutMs) {
       if (hasActiveStationWifiConnection()) return true;
+      if (abortRequested()) return false;
       delay(100);
     }
     LOG_ERR(TAG, "sleep refresh: WiFi connect timed out (%s), attempt %d", cred->ssid.c_str(), attempt + 1);
@@ -189,6 +193,8 @@ const char* TesseraeClient::errorString(Error error) {
       return "LOW_MEMORY";
     case INVALID_RESPONSE:
       return "INVALID_RESPONSE";
+    case ABORTED:
+      return "ABORTED";
     default:
       return "UNKNOWN";
   }
@@ -463,6 +469,7 @@ uint32_t TesseraeClient::takeDeferredRefreshSeconds() {
   deferredRefresh = false;
   return want ? DEFERRED_REFRESH_SECONDS : 0;
 }
+void TesseraeClient::setAbortCheck(std::function<bool()> check) { abortCheck = std::move(check); }
 void TesseraeClient::setStepListener(std::function<void(const char*)> listener) { stepListener = std::move(listener); }
 
 TesseraeClient::Error TesseraeClient::refreshBeforeSleep(const bool timedWake) {
@@ -483,6 +490,7 @@ TesseraeClient::Error TesseraeClient::refreshBeforeSleep(const bool timedWake) {
   if (!alreadyConnected) notifyStep(tr(STR_STEP_CONNECTING));
   if (!alreadyConnected && !(timedWake ? connectSavedWifi(TIMED_WIFI_TIMEOUT_MS, 2) : connectSavedWifi())) {
     wifiOff();
+    if (abortRequested()) return ABORTED;
     lastAttemptFailed = true;
     setFailureMark(true);
     return NETWORK_ERROR;
@@ -492,6 +500,10 @@ TesseraeClient::Error TesseraeClient::refreshBeforeSleep(const bool timedWake) {
   if (timedWake) {
     uint16_t ignoredPoll = 0;
     sendHeartbeat(&ignoredPoll);
+    if (abortRequested()) {
+      if (!alreadyConnected) wifiOff();
+      return ABORTED;
+    }
   }
 
   // Sync the open book first, while the heap is at its largest (TLS needs it). Going to sleep only pushes (the
@@ -513,6 +525,11 @@ TesseraeClient::Error TesseraeClient::refreshBeforeSleep(const bool timedWake) {
     if (openBookPercent() != pctBeforeSync) quickRecheck = true;
   } else if (syncing) {
     LOG_INF(TAG, "refresh: kosync skipped, Wi-Fi took %u ms", static_cast<unsigned>(millis() - startedMs));
+  }
+
+  if (abortRequested()) {
+    if (!alreadyConnected) wifiOff();
+    return ABORTED;
   }
 
   Error err = OK;
