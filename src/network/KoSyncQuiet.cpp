@@ -10,6 +10,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <memory>
 
 #include "CrossPointSettings.h"
@@ -81,6 +84,32 @@ bool loadLocal(const std::string& epubPath, Local& out) {
   return out.ko.valid;
 }
 
+// Server timestamp of the last remote record this reader has already reconciled, per book hash. It tells "somebody
+// wrote since I last synced" (newest wins, even backwards) apart from "my own copy is just further along".
+constexpr char SEEN_TS_PATH[] = "/.crosspoint/kosync_seen_ts.txt";
+
+int64_t loadSeenTs(const std::string& hash) {
+  FsFile file;
+  if (!Storage.openFileForRead("KOSYNCQ", SEEN_TS_PATH, file)) return 0;
+  char buf[96] = {};
+  file.read(buf, sizeof(buf) - 1);
+  file.close();
+  char* space = strchr(buf, ' ');
+  if (!space) return 0;
+  *space = '\0';
+  return hash == buf ? atoll(space + 1) : 0;
+}
+
+void saveSeenTs(const std::string& hash, const int64_t ts) {
+  if (ts <= 0) return;
+  FsFile file;
+  if (!Storage.openFileForWrite("KOSYNCQ", SEEN_TS_PATH, file)) return;
+  char buf[96];
+  const int n = snprintf(buf, sizeof(buf), "%s %lld", hash.c_str(), static_cast<long long>(ts));
+  file.write(reinterpret_cast<const uint8_t*>(buf), n);
+  file.close();
+}
+
 uint32_t positionKey(const Local& l) {
   return (static_cast<uint32_t>(std::max(0, l.spine)) << 16) | static_cast<uint32_t>(std::max(0, l.page));
 }
@@ -114,6 +143,9 @@ KoSyncQuiet::Result upload(const std::string& epubPath, const Local& l) {
     LOG_ERR(TAG, "upload failed: %s", KOReaderSyncClient::errorString(err).c_str());
     return KoSyncQuiet::Result::FAILED;
   }
+  // Remember the server's stamp for what was just written, so our own record never looks like a newer remote one.
+  KOReaderProgress stamped;
+  if (KOReaderSyncClient::getProgress(l.hash, stamped) == KOReaderSyncClient::OK) saveSeenTs(l.hash, stamped.timestamp);
   KO_SYNC_STATUS.markSynced(epubPath, positionKey(l));
   return KoSyncQuiet::Result::PUSHED;
 }
@@ -140,6 +172,7 @@ KoSyncQuiet::Result applyRemote(const std::string& epubPath, const Local& local,
   KO_SYNC_STATUS.notePosition(epubPath, key);
   KO_SYNC_STATUS.persistPosition();
   KO_SYNC_STATUS.markSynced(epubPath, key);
+  saveSeenTs(local.hash, remote.timestamp);
   LOG_INF(TAG, "pull: moved to spine %d page %d (%.1f%%)", target.spineIndex, target.pageNumber,
           remote.percentage * 100.0f);
   return KoSyncQuiet::Result::PULLED;
@@ -162,9 +195,19 @@ Result syncBoth(const std::string& epubPath, const bool allowPush, const bool al
   }
 
   const float delta = local.ko.percentage - remote.percentage;
+  // Newest write wins, in either direction: if only the server changed since the last sync, follow it even when
+  // that means going back (re-listening to a chapter); if only this reader changed, push even when behind.
+  const int64_t seenTs = loadSeenTs(local.hash);
+  const bool remoteNewer = seenTs > 0 && remote.timestamp > seenTs;
+  const bool localChanged = !KO_SYNC_STATUS.isSynced(epubPath);
+  if (std::fabs(delta) > SAME_PROGRESS_EPSILON) {
+    if (remoteNewer && !localChanged) return allowPull ? applyRemote(epubPath, local, remote) : Result::IN_SYNC;
+    if (!remoteNewer && localChanged && seenTs > 0) return allowPush ? upload(epubPath, local) : Result::IN_SYNC;
+  }
   if (delta > SAME_PROGRESS_EPSILON) return allowPush ? upload(epubPath, local) : Result::IN_SYNC;
   if (delta < -SAME_PROGRESS_EPSILON) return allowPull ? applyRemote(epubPath, local, remote) : Result::IN_SYNC;
   // Equal: what the server holds is what is on the reader.
+  saveSeenTs(local.hash, remote.timestamp);
   KO_SYNC_STATUS.markSynced(epubPath, positionKey(local));
   return Result::IN_SYNC;
 }
