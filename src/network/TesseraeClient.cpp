@@ -10,6 +10,7 @@
 #include <Memory.h>
 #include <SecureHttpClient.h>
 #include <WiFi.h>
+#include <esp_attr.h>
 
 #include <cstdint>
 #include <cstdio>
@@ -40,6 +41,9 @@ constexpr uint32_t SLEEP_WIFI_TIMEOUT_MS = 7000;
 // A timed wake has nobody waiting on it, so it gives a slow or flaky network much longer, and tries twice.
 constexpr uint32_t TIMED_WIFI_TIMEOUT_MS = 20000;
 constexpr uint32_t RETRY_AFTER_FAILURE_SECONDS = 300;
+// Failed refreshes back off (5 min, then 15 min, then the normal interval) so a device that is out of reach of its
+// saved Wi-Fi does not keep waking every few minutes.
+constexpr uint32_t RETRY_AFTER_SECOND_FAILURE_SECONDS = 900;
 // Same order of magnitude as the KOSync TLS gate; skip the refresh rather than risk a failed handshake.
 constexpr uint32_t SLEEP_MIN_FREE_HEAP = 40000;
 constexpr uint32_t SLEEP_MIN_MAX_ALLOC_HEAP = 24000;
@@ -442,6 +446,9 @@ namespace {
 bool refreshedThisBoot = false;
 bool timedWakeRender = false;
 bool lastAttemptFailed = false;
+// Survive deep sleep (each wake is a fresh boot): how many failed refreshes / quick rechecks in a row.
+RTC_DATA_ATTR uint8_t failureChain = 0;
+RTC_DATA_ATTR uint8_t quickChain = 0;
 bool quickRecheck = false;
 bool deferredRefresh = false;
 std::function<void(const char*)> stepListener;
@@ -457,11 +464,26 @@ void TesseraeClient::leaveWifi() { wifiOff(); }
 void TesseraeClient::markRefreshed() { refreshedThisBoot = true; }
 void TesseraeClient::setTimedWake(const bool v) { timedWakeRender = v; }
 bool TesseraeClient::isTimedWake() { return timedWakeRender; }
-uint32_t TesseraeClient::retryAfterFailureSeconds() { return lastAttemptFailed ? RETRY_AFTER_FAILURE_SECONDS : 0; }
+uint32_t TesseraeClient::retryAfterFailureSeconds() {
+  if (!lastAttemptFailed) {
+    failureChain = 0;
+    return 0;
+  }
+  const uint32_t seconds =
+      failureChain == 0 ? RETRY_AFTER_FAILURE_SECONDS : (failureChain == 1 ? RETRY_AFTER_SECOND_FAILURE_SECONDS : 0);
+  if (failureChain < 255) failureChain++;
+  return seconds;
+}
 uint32_t TesseraeClient::takeQuickRecheckSeconds() {
   const bool want = quickRecheck;
   quickRecheck = false;
-  return want ? QUICK_RECHECK_SECONDS : 0;
+  // One quick look after a change is enough; a second one in a row falls back to the normal interval.
+  if (!want || quickChain >= 1) {
+    quickChain = 0;
+    return 0;
+  }
+  quickChain++;
+  return QUICK_RECHECK_SECONDS;
 }
 void TesseraeClient::deferRefresh() { deferredRefresh = true; }
 uint32_t TesseraeClient::takeDeferredRefreshSeconds() {

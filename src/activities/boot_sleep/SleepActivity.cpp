@@ -125,12 +125,15 @@ void* pngSleepOpen(const char* filename, int32_t* size) {
 // before it is pushed to the display.  Only visible when auto-push is enabled,
 // credentials are configured, and the current book has never been pushed.
 // ---------------------------------------------------------------------------
-constexpr int kSyncBadgePad = 6;                  // inner horizontal/vertical padding
-constexpr int kSyncBadgeMargin = 10;              // margin from screen edge
-constexpr int kSyncBadgeLineWidth = 2;            // border thickness
-constexpr int kTesseraeFooterRightMargin = 18;    // footer inset on the Tesserae dashboard
-constexpr int kTesseraeHeaderCenterFromTop = 43;  // NOT SYNCED pill: vertical centre, just under the status line
-constexpr int kTesseraePillPadX = 5;              // NOT SYNCED pill: slim padding so it clears the status line
+constexpr int kSyncBadgePad = 6;        // inner horizontal/vertical padding
+constexpr int kSyncBadgeMargin = 10;    // margin from screen edge
+constexpr int kSyncBadgeLineWidth = 2;  // border thickness
+// NOT SYNCED pill on the Tesserae dashboard: it replaces the "updated" text in the status line (top right, drawn by
+// x4-home-render). That line is 18 px from the right edge, a battery block 70 px wide, an 8 px gap, then the
+// "updated" box the pill covers; the Leave pill sits on the row below, so nothing else shares this spot.
+constexpr int kTesseraeStatusRightInset = 18 + 70 + 8;  // pill's right edge, from the screen's right edge
+constexpr int kTesseraeHeaderCenterFromTop = 21;        // vertical centre of the status line
+constexpr int kTesseraePillPadX = 4;
 constexpr int kTesseraePillPadY = 1;
 
 // Set by renderTesseraeSleepScreen(): the refresh did not complete and the dashboard on screen is old. A refresh also
@@ -156,7 +159,7 @@ void drawKoSyncUnsyncedBadge(GfxRenderer& renderer) {
   const int padY = inFooterSlot ? kTesseraePillPadY : kSyncBadgePad;
   const int badgeW = textW + padX * 2;
   const int badgeH = textH + padY * 2;
-  const int badgeX = inFooterSlot ? renderer.getScreenWidth() - badgeW - kTesseraeFooterRightMargin
+  const int badgeX = inFooterSlot ? renderer.getScreenWidth() - badgeW - kTesseraeStatusRightInset
                                   : renderer.getScreenWidth() - badgeW - kSyncBadgeMargin;
   const int badgeY =
       inFooterSlot ? kTesseraeHeaderCenterFromTop - badgeH / 2 : renderer.getScreenHeight() - badgeH - kSyncBadgeMargin;
