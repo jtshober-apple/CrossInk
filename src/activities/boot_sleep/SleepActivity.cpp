@@ -1049,7 +1049,7 @@ void SleepActivity::renderPowerOffScreen() const {
   constexpr int kInfoLineY = 40 + 150 + 12;  // date and battery share this line, below the clock
 
   // Top half: status, clock, date, battery.
-  renderer.drawCenteredText(UI_10_FONT_ID, 8, "Going to sleep...", true, EpdFontFamily::BOLD);
+  renderer.drawCenteredText(UI_10_FONT_ID, 8, "Sleeping...", true, EpdFontFamily::BOLD);
 
   ReadingStatsDateTime now;
   if (getCurrentLocalReadingStatsDateTime(now) && now.isValid()) {
