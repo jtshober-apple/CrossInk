@@ -129,7 +129,7 @@ constexpr int kSyncBadgePad = 6;                  // inner horizontal/vertical p
 constexpr int kSyncBadgeMargin = 10;              // margin from screen edge
 constexpr int kSyncBadgeLineWidth = 2;            // border thickness
 constexpr int kTesseraeFooterRightMargin = 18;    // footer inset on the Tesserae dashboard
-constexpr int kTesseraeHeaderCenterFromTop = 33;  // NOT SYNCED pill: vertical centre of the date line
+constexpr int kTesseraeHeaderCenterFromTop = 44;  // NOT SYNCED pill: vertical centre, just under the status line
 
 // Set by renderTesseraeSleepScreen(): the refresh did not complete and the dashboard on screen is old. A refresh also
 // syncs the open book, so this raises the same NOT SYNCED tag as an unsent reading position.
