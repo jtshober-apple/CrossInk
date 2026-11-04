@@ -129,7 +129,9 @@ constexpr int kSyncBadgePad = 6;                  // inner horizontal/vertical p
 constexpr int kSyncBadgeMargin = 10;              // margin from screen edge
 constexpr int kSyncBadgeLineWidth = 2;            // border thickness
 constexpr int kTesseraeFooterRightMargin = 18;    // footer inset on the Tesserae dashboard
-constexpr int kTesseraeHeaderCenterFromTop = 44;  // NOT SYNCED pill: vertical centre, just under the status line
+constexpr int kTesseraeHeaderCenterFromTop = 43;  // NOT SYNCED pill: vertical centre, just under the status line
+constexpr int kTesseraePillPadX = 5;              // NOT SYNCED pill: slim padding so it clears the status line
+constexpr int kTesseraePillPadY = 1;
 
 // Set by renderTesseraeSleepScreen(): the refresh did not complete and the dashboard on screen is old. A refresh also
 // syncs the open book, so this raises the same NOT SYNCED tag as an unsent reading position.
@@ -150,8 +152,10 @@ void drawKoSyncUnsyncedBadge(GfxRenderer& renderer) {
   const char* label = inFooterSlot ? "NOT SYNCED" : "-";  // ASCII dash: "not synced"
   const int textW = renderer.getTextWidth(fontId, label);
   const int textH = renderer.getLineHeight(fontId);
-  const int badgeW = textW + kSyncBadgePad * 2;
-  const int badgeH = textH + kSyncBadgePad * 2;
+  const int padX = inFooterSlot ? kTesseraePillPadX : kSyncBadgePad;
+  const int padY = inFooterSlot ? kTesseraePillPadY : kSyncBadgePad;
+  const int badgeW = textW + padX * 2;
+  const int badgeH = textH + padY * 2;
   const int badgeX = inFooterSlot ? renderer.getScreenWidth() - badgeW - kTesseraeFooterRightMargin
                                   : renderer.getScreenWidth() - badgeW - kSyncBadgeMargin;
   const int badgeY =
@@ -161,7 +165,7 @@ void drawKoSyncUnsyncedBadge(GfxRenderer& renderer) {
       SETTINGS.sleepScreenCoverFilter == CrossPointSettings::SLEEP_SCREEN_COVER_FILTER::INVERTED_BLACK_AND_WHITE;
   // Badge: filled black rectangle with white text (or inverted when filter is on).
   renderer.fillRect(badgeX, badgeY, badgeW, badgeH, !inverted);
-  renderer.drawText(fontId, badgeX + kSyncBadgePad, badgeY + kSyncBadgePad, label, inverted);
+  renderer.drawText(fontId, badgeX + padX, badgeY + padY, label, inverted);
 }
 
 void pngSleepClose(void* handle) {
