@@ -6,8 +6,10 @@
 #include <HalStorage.h>
 #include <LibraryBuilder.h>
 #include <Logging.h>
+#ifndef LIBRARY_SYNC_NO_CRAWL
 #include <OpdsParser.h>
 #include <OpdsStream.h>
+#endif
 #include <ZipFile.h>
 
 #ifndef SIMULATOR
@@ -227,13 +229,50 @@ class LineSink {
   bool overflow = false;
 };
 
-HttpDownloader::DownloadOptions baseOptions(const std::string& origin) {
+// ---- platform layer -------------------------------------------------------------------------------------------
+// The only code that touches HttpDownloader and the library index. Porting Library Sync to another base firmware
+// means adapting just these few functions (and, if there is no OpdsParser, building with LIBRARY_SYNC_NO_CRAWL).
+
+enum class Net : uint8_t { OK, ABORTED, FAILED, NO_SPACE };
+using Cancel = std::function<bool()>;
+
+// GET `url`, streaming the body to onData (no buffering). `cancel` is polled while the body arrives.
+Net netStream(const OpdsServer& server, const std::string& origin, const std::string& url,
+              const std::function<bool(const uint8_t*, size_t)>& onData, const Cancel& cancel) {
   HttpDownloader::DownloadOptions options;
   options.bufferSize = BUFFER_SIZE;
   options.transport = HttpDownloader::Transport::WOLFSSL;
   options.authorizationOrigin = origin;
-  return options;
+  if (cancel) options.shouldCancel = cancel;
+  const auto result =
+      HttpDownloader::streamUrl(url, onData, nullptr, server.username, server.password, std::move(options));
+  if (result == HttpDownloader::OK) return Net::OK;
+  return result == HttpDownloader::ABORTED ? Net::ABORTED : Net::FAILED;
 }
+
+bool validEpub(const std::string& path);
+
+// Download to `<dest>.part`, resuming a partial one, check it is a real epub, then publish it over `dest`
+// (an existing `dest` is kept as `.old` until the new file is in place). Never leaves a truncated book behind.
+Net netDownload(const OpdsServer& server, const std::string& origin, const std::string& url, const std::string& dest,
+                const Cancel& cancel, const std::function<void(size_t, size_t)>& progress) {
+  HttpDownloader::DownloadOptions options(/*preservePartial=*/true, /*resumePartial=*/true);
+  options.shouldCancel = cancel;
+  options.bufferSize = BUFFER_SIZE;
+  options.transport = HttpDownloader::Transport::WOLFSSL;
+  options.authorizationOrigin = origin;
+  options.stageAsPart = true;
+  options.checkFreeSpace = true;
+  options.validate = validEpub;
+  const auto result = HttpDownloader::downloadToFile(url, dest, progress, nullptr, server.username, server.password,
+                                                     std::move(options));
+  if (result == HttpDownloader::OK) return Net::OK;
+  if (result == HttpDownloader::ABORTED) return Net::ABORTED;
+  return result == HttpDownloader::INSUFFICIENT_SPACE ? Net::NO_SPACE : Net::FAILED;
+}
+
+void libraryChanged() { library::invalidateLibraryIndex(); }          // new books: the Library rescans next time
+void bookReplaced(const std::string& path) { clearBookCache(path); }  // layout caches belong to the old file
 
 struct Pass {
   const OpdsServer* server = nullptr;
@@ -285,16 +324,14 @@ bool readManifest(Pass& pass) {
     sawBook = true;
     consider(pass, parsed);
   });
-  auto options = baseOptions(pass.origin);
-  if (pass.abort) options.shouldCancel = [&pass] { return (*pass.abort)(); };
-  const auto result = HttpDownloader::streamUrl(
-      url, [&sink](const uint8_t* data, const size_t len) { return sink.write(data, len); }, nullptr,
-      pass.server->username, pass.server->password, std::move(options));
+  const auto result = netStream(
+      *pass.server, pass.origin, url, [&sink](const uint8_t* data, const size_t len) { return sink.write(data, len); },
+      [&pass] { return (*pass.abort)(); });
   sink.finish();
-  if (result == HttpDownloader::ABORTED) return false;
-  return result == HttpDownloader::OK && sawBook;
+  return result == Net::OK && sawBook;
 }
 
+#ifndef LIBRARY_SYNC_NO_CRAWL
 std::string filenameFor(const OpdsEntry& book, const OpdsFilenameFormat format) {
   std::string base;
   if (book.author.empty()) {
@@ -321,12 +358,11 @@ bool crawlFeeds(Pass& pass) {
     OpdsParser parser(entries.get(), MAX_OPDS_FEED_ENTRIES);
     {
       OpdsParserStream stream{parser};
-      auto options = baseOptions(pass.origin);
-      if (pass.abort) options.shouldCancel = [&pass] { return (*pass.abort)(); };
-      const auto result = HttpDownloader::streamUrl(
-          feedUrl, [&stream](const uint8_t* data, const size_t len) { return stream.write(data, len) == len; }, nullptr,
-          pass.server->username, pass.server->password, std::move(options));
-      if (result != HttpDownloader::OK) {
+      const auto result = netStream(
+          *pass.server, pass.origin, feedUrl,
+          [&stream](const uint8_t* data, const size_t len) { return stream.write(data, len) == len; },
+          [&pass] { return (*pass.abort)(); });
+      if (result != Net::OK) {
         if (i == 0) return false;
         continue;
       }
@@ -356,6 +392,9 @@ bool crawlFeeds(Pass& pass) {
   }
   return sawBook;
 }
+#else
+bool crawlFeeds(Pass&) { return false; }  // no OPDS parser in this build: manifest servers only
+#endif
 
 bool validEpub(const std::string& path) {
   ZipFile zip(path);
@@ -558,41 +597,32 @@ Result run(const bool manual, const AbortFn& abortFn, const ProgressFn& progress
         continue;
       }
 
-      HttpDownloader::DownloadOptions options(/*preservePartial=*/true, /*resumePartial=*/true);
-      options.shouldCancel = [&] { return abort() || outOfTime(); };
-      options.bufferSize = BUFFER_SIZE;
-      options.transport = HttpDownloader::Transport::WOLFSSL;
-      options.authorizationOrigin = origin;
-      options.stageAsPart = true;
-      options.checkFreeSpace = true;
-      options.validate = validEpub;
       const std::string url = UrlUtils::buildUrl(server->url, book.url);
-      const auto download = HttpDownloader::downloadToFile(
-          url, dest,
+      const Net download = netDownload(
+          *server, origin, url, dest, [&] { return abort() || outOfTime(); },
           [&](const size_t done, const size_t total) {
             out.bytes = static_cast<uint32_t>(done);
             out.bytesTotal = static_cast<uint32_t>(total);
             if (progress) progress(out);
-          },
-          nullptr, server->username, server->password, std::move(options));
+          });
 
-      if (download == HttpDownloader::OK) {
+      if (download == Net::OK) {
         rememberBook(book.idHash, book.size, book.sha1Prefix);
         saveState();
-        if (book.update) clearBookCache(dest);
+        if (book.update) bookReplaced(dest);
         ++out.fetched;
         ++fetchedTotal;
         if (!book.update) ++out.synced;
         if (out.missing > 0) --out.missing;
         changedCard = true;
         LOG_INF(TAG, "fetched %s", book.filename.c_str());
-      } else if (download == HttpDownloader::ABORTED) {
+      } else if (download == Net::ABORTED) {
         result = abort() ? Result::ABORTED : Result::PARTIAL;  // a half-finished .part resumes on the next pass
         stop = true;
       } else {
         ++out.failed;
         LOG_ERR(TAG, "failed %s (%d)", book.filename.c_str(), static_cast<int>(download));
-        if (download == HttpDownloader::INSUFFICIENT_SPACE) {
+        if (download == Net::NO_SPACE) {
           result = Result::PARTIAL;
           stop = true;
         }
@@ -615,7 +645,7 @@ Result run(const bool manual, const AbortFn& abortFn, const ProgressFn& progress
   }
 
   saveState();
-  if (changedCard) library::invalidateLibraryIndex();
+  if (changedCard) libraryChanged();
   if (result == Result::OK || result == Result::PARTIAL) {
     int64_t now = 0;
     if (rtcMinutesSinceEpoch(now)) c.lastCheckMin = now;
