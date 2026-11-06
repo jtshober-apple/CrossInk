@@ -16,6 +16,7 @@ extern HalPowerManager powerManager;  // Singleton
 class HalPowerManager {
   int normalFreq = 0;  // MHz
   bool isLowPower = false;
+  uint32_t timedWakeSeconds_ = 0;  // 0 = no timer wake source
 
   mutable int _batteryCachedPercent = 0;         // Last read battery percentage (0-100)
   mutable unsigned long _batteryLastPollMs = 0;  // Timestamp of last battery read in milliseconds
@@ -44,6 +45,10 @@ class HalPowerManager {
   // release, so a press that is still down wakes the device straight back up
   // through the normal power-button wake path.
   void startDeepSleep(HalGPIO& gpio, bool wakeOnHeldButton = false) const;
+
+  // Also wake from deep sleep after this many seconds (0 = power button only). Applies to the next
+  // startDeepSleep() only through the value held here, so callers re-arm it before every sleep.
+  void setTimedWakeSeconds(uint32_t seconds) { timedWakeSeconds_ = seconds; }
 
 #if FREEINK_DEVICE_PICCO
   // While USB powers the device, light-sleep instead of deep sleep (deep sleep

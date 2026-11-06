@@ -154,6 +154,10 @@ void HalPowerManager::startDeepSleep(HalGPIO& gpio, const bool wakeOnHeldButton)
   freeink::metalio::powerOff();
 #endif
 
+  // Timed wake (Tesserae dashboard refresh): the RTC timer ends deep sleep besides the power button.
+  if (timedWakeSeconds_ > 0) {
+    esp_sleep_enable_timer_wakeup(static_cast<uint64_t>(timedWakeSeconds_) * 1000000ULL);
+  }
   if (wakeOnHeldButton) {
     freeink::PowerManager::armPowerButtonWakeup();
     freeink::PowerManager::deepSleep();

@@ -27,6 +27,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     QUICK_RESUME = 6,
     TRANSPARENT_CUSTOM = 7,
     COVER_TRANSPARENT = 8,
+    TESSERAE_SLEEP = 9,  // server-rendered dashboard (Tesserae)
     SLEEP_SCREEN_MODE_COUNT
   };
   enum SLEEP_SCREEN_COVER_MODE { FIT = 0, CROP = 1, SLEEP_SCREEN_COVER_MODE_COUNT };
@@ -420,6 +421,18 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // books someone reads is not necessarily the language of their UI.
   // See keyboard_layouts:: for the bit assignment and the defaulting rules.
   uint16_t keyboardLayouts = 0;
+  // Quiet KoSync on moments the radio is already up: push when going to sleep (alongside the Tesserae dashboard
+  // refresh), pull at power-button wake before the book opens.
+  uint8_t koSyncPushOnSleep = 1;
+  uint8_t koSyncPullOnWake = 1;
+  // Tesserae dashboard integration. tessServerUrl: base URL like http://192.168.1.x:8765
+  // tessDeviceId/Token: assigned by the server after discover. tessEtag: last ETag for If-None-Match.
+  char tessServerUrl[128] = "";
+  char tessDeviceId[64] = "";
+  char tessDeviceToken[128] = "";
+  char tessEtag[64] = "";
+  // Minutes between background wakes that refresh the Tesserae sleep screen (0 = only when going to sleep).
+  uint8_t tessAutoRefreshMin = 30;
   // Bluetooth page turner, saved under the keys lib/BlePageTurner reads and writes (BlePageTurnerJson.h).
   bleturner::Config ble;
   // Quick Resume: keep current content visible with moon icon instead of showing a static sleep screen.

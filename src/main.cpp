@@ -23,6 +23,7 @@
 #include <XteinkDetect.h>
 #include <builtinFonts/all.h>
 #include <esp_heap_caps.h>
+#include <esp_sleep.h>
 #include <esp_wifi.h>
 #include <time.h>
 
@@ -33,6 +34,7 @@
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
 #include "KOReaderCredentialStore.h"
+#include "KOSyncStatusStore.h"
 #include "LcpPassphraseStore.h"
 #include "MappedInputManager.h"
 #include "OpdsServerStore.h"
@@ -45,6 +47,8 @@
 #include "activities/settings/SdFirmwareUpdateActivity.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
+#include "network/KoSyncQuiet.h"
+#include "network/TesseraeClient.h"
 #include "platform/UsbSerialJtagHandoff.h"
 #include "util/ButtonNavigator.h"
 #include "util/PluginEvents.h"
@@ -464,9 +468,28 @@ static bool holdSleepWhileUsbPowered() {
 }
 #endif
 
+// Seconds until the next background Tesserae refresh while asleep (0 = don't wake on a timer).
+// Skipped when the dashboard isn't the sleep screen, the device isn't paired, or the battery is low.
+static uint32_t tesseraeTimedWakeSeconds() {
+  if (SETTINGS.sleepScreen != CrossPointSettings::SLEEP_SCREEN_MODE::TESSERAE_SLEEP) return 0;
+  if (SETTINGS.tessAutoRefreshMin == 0 || SETTINGS.tessServerUrl[0] == '\0' || SETTINGS.tessDeviceToken[0] == '\0') {
+    return 0;
+  }
+  if (powerManager.getBatteryPercentage() < 15) return 0;
+  const uint32_t retry = TesseraeClient::retryAfterFailureSeconds();
+  if (retry != 0) return retry;
+  const uint32_t deferred = TesseraeClient::takeDeferredRefreshSeconds();  // power-off: first check after ~15 s
+  if (deferred != 0) return deferred;
+  const uint32_t recheck = TesseraeClient::takeQuickRecheckSeconds();
+  if (recheck != 0) return recheck;
+  return static_cast<uint32_t>(SETTINGS.tessAutoRefreshMin) * 60u;
+}
+
 // Enter deep sleep mode
 void enterDeepSleep(bool fromTimeout = false) {
   HalPowerManager::Lock powerLock;  // Ensure we are at normal CPU frequency for sleep preparation
+  // The sleep screen's sync tag compares this with the last pushed position; RAM is gone after wake.
+  KO_SYNC_STATUS.persistPosition();
   APP_STATE.lastSleepFromReader = activityManager.isReaderActivity();
 
   // Sleep may end in a power-off (battery death, latch); persist the clock
@@ -519,10 +542,11 @@ void enterDeepSleep(bool fromTimeout = false) {
   Storage.prepareForDeepSleep();
   LOG_DBG("MAIN", "Entering deep sleep");
 
+  powerManager.setTimedWakeSeconds(tesseraeTimedWakeSeconds());
   powerManager.startDeepSleep(gpio, wakeOnHeldButton);
 }
 
-void setupDisplayAndFonts(bool seamless = false) {
+void setupDisplayAndFonts(bool seamless = false, bool loadSdFonts = true) {
 #if !FREEINK_MCU_C3
   // C3 resolves its controller in HalGPIO::begin() before SPI claims the
   // display pins. X4 Pro skips that C3-only path, so probe here before
@@ -557,10 +581,72 @@ void setupDisplayAndFonts(bool seamless = false) {
   renderer.insertFont(UI_12_FONT_ID, ui12FontFamily);
   renderer.insertFont(SMALL_FONT_ID, smallFontFamily);
 
-  // Discover and load SD card fonts
-  sdFontSystem.begin(renderer);
+  // Discover and load SD card fonts (a background timed wake draws only with the built-in UI fonts)
+  if (loadSdFonts) sdFontSystem.begin(renderer);
 
   LOG_DBG("MAIN", "Fonts setup");
+}
+
+// True once the user presses Power during a background wake (a single click when short presses sleep/wake, else a
+// short hold): the background work gives up so the reader boots normally instead of making them wait.
+static bool timedWakePowerPressed() {
+  static uint32_t heldSince = 0;
+  gpio.update();
+  if (!gpio.isPressed(HalGPIO::BTN_POWER)) {
+    heldSince = 0;
+    return false;
+  }
+  if (heldSince == 0) heldSince = millis();
+  return SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP || millis() - heldSince >= 700;
+}
+
+// Woken by the sleep timer, not by a button: Wi-Fi, heartbeat, KoSync push+pull, fetch the dashboard, redraw only
+// if something changed, and go straight back to sleep. Deliberately leaves APP_STATE alone so the next button wake
+// resumes exactly where the reader was put to sleep. Returns only when the user pressed Power during the refresh:
+// the caller then boots normally. Every other path ends in deep sleep.
+static void timedWakeRefreshAndResleep() {
+  LOG_INF("BOOT", "Timed wake: refreshing Tesserae dashboard");
+  WIFI_STORE.loadFromFile();  // saved networks live on the SD card; nothing else has loaded them in this boot
+  TesseraeClient::setTimedWake(true);
+  TesseraeClient::setAbortCheck(timedWakePowerPressed);
+  const auto err = TesseraeClient::refreshBeforeSleep(/*timedWake=*/true);
+  TesseraeClient::setAbortCheck(nullptr);
+  if (err == TesseraeClient::ABORTED) {
+    LOG_INF("BOOT", "Timed wake: Power pressed, booting normally");
+    TesseraeClient::setTimedWake(false);
+    return;
+  }
+
+  // Battery: an e-ink redraw (and the font/display setup it needs) is skipped when nothing on the panel would change.
+  const bool pill = TesseraeClient::syncPillWanted();
+  const auto shown = TesseraeClient::screenState();
+  const auto wanted = pill ? TesseraeClient::ScreenState::DASHBOARD_WITH_PILL : TesseraeClient::ScreenState::DASHBOARD;
+  bool redraw = false;
+  if (err == TesseraeClient::OK) {
+    redraw = true;  // a new frame
+  } else if (err == TesseraeClient::FRAME_UNCHANGED) {
+    redraw = shown != wanted;  // same frame; only the pill state or a stand-in on screen forces a redraw
+  } else {
+    // A failed refresh normally leaves the panel alone, but once the picture has gone stale it must say so.
+    redraw = TesseraeClient::staleMarkNeedsRedraw();
+  }
+  if (redraw) {
+    TesseraeClient::markRefreshed();  // SleepActivity must not fetch a second time
+    setupDisplayAndFonts(/*seamless=*/true, /*loadSdFonts=*/false);
+    deepSleepInProgress = true;
+    activityManager.goToSleep(false);
+    halTiltSensor.deepSleep();
+    display.deepSleep();
+  } else {
+    LOG_INF("BOOT", "Timed wake: no redraw needed (%s), back to sleep", TesseraeClient::errorString(err));
+  }
+  if (WiFi.getMode() != WIFI_MODE_NULL) {
+    WiFi.disconnect(true);
+    WiFi.mode(WIFI_OFF);
+  }
+  Storage.prepareForDeepSleep();
+  powerManager.setTimedWakeSeconds(tesseraeTimedWakeSeconds());
+  powerManager.startDeepSleep(gpio);
 }
 
 void setup() {
@@ -645,8 +731,8 @@ void setup() {
   HalSystem::checkPanic();
 
   APP_STATE.loadFromFile();
-  const bool isSleepWake = wakeupReason == HalGPIO::WakeupReason::PowerButton;
-  const bool isPersistedSleepWake = isSleepWake && !APP_STATE.showBootScreen;
+  bool isSleepWake = wakeupReason == HalGPIO::WakeupReason::PowerButton;
+  bool isPersistedSleepWake = isSleepWake && !APP_STATE.showBootScreen;
 
   if (recoveryFirmwareMode) {
     LOG_INF("MAIN", "Recovery firmware mode (%s + POWER held at boot)",
@@ -688,6 +774,14 @@ void setup() {
   // Restore the monotonic clock floor before anything reads time() (event
   // timestamps, loan-expiry checks).
   trustedtime::init();
+  // Woken by the sleep timer (not a button, not a silent restart): refresh the dashboard in the background.
+  // Returns only if Power was pressed meanwhile; then this boot continues as an ordinary power-button wake.
+  if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER && !isSilentReboot) {
+    timedWakeRefreshAndResleep();
+    isSleepWake = true;
+    isPersistedSleepWake = !APP_STATE.showBootScreen;
+    wakePowerReleasePending = true;
+  }
   bleturner::begin(pageturner::host, SETTINGS.ble);
 
   // Brightness and warmth are always restored. A normal wake starts with the

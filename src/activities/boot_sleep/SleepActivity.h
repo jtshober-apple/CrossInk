@@ -24,9 +24,14 @@ class SleepActivity final : public Activity {
   void renderLastScreenSleepScreen() const;
   void renderTransparentCustomSleepScreen() const;
   void renderBlankSleepScreen() const;
+  // Tesserae dashboard (server-rendered frame cached on the SD card) and the device-drawn stand-in shown at power-off.
+  void renderTesseraeSleepScreen() const;
+  void renderPowerOffScreen() const;
 
   bool fromTimeout = false;
   // Cover + Transparent: the cover under the overlay, and the same cover while its gray planes are redrawn.
   mutable const Bitmap* overlayCover = nullptr;
   mutable const Bitmap* overlayGrayCover = nullptr;
+  // Tesserae frame being drawn: stamp the NOT SYNCED pill into the frame (and each gray plane) when it applies.
+  mutable bool tesseraePill = false;
 };

@@ -19,6 +19,9 @@ inline bool saveProgress(const Epub& epub, int spineIndex, int pageNumber, int p
     LOG_ERR("ERS", "Progress values out of range: spine=%d page=%d count=%d", spineIndex, pageNumber, pageCount);
     return false;
   }
+  // Track the position for the NOT SYNCED tag (unsynced when it differs from the last pushed position).
+  KO_SYNC_STATUS.notePosition(epub.getPath(),
+                              (static_cast<uint32_t>(spineIndex) << 16) | static_cast<uint32_t>(pageNumber));
   uint8_t data[10];
   data[0] = spineIndex & 0xFF;
   data[1] = (spineIndex >> 8) & 0xFF;

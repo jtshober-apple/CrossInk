@@ -20,6 +20,7 @@ void forEachBaseSetting(SettingVisitor visit, void* context) {
     values[CrossPointSettings::QUICK_RESUME] = StrId::STR_QUICK_RESUME;
     values[CrossPointSettings::TRANSPARENT_CUSTOM] = StrId::STR_TRANSPARENT;
     values[CrossPointSettings::COVER_TRANSPARENT] = StrId::STR_COVER_TRANSPARENT;
+    values[CrossPointSettings::TESSERAE_SLEEP] = StrId::STR_TESSERAE_SLEEP_SCREEN;
     return values;
   }();
   static constexpr auto STATUS_BAR_CLOCK_VALUES = [] {
@@ -323,6 +324,24 @@ void forEachBaseSetting(SettingVisitor visit, void* context) {
         KOREADER_STORE.saveToFile();
       },
       "koSyncClippings", StrId::STR_KOREADER_SYNC));
+  // --- Tesserae dashboard + quiet KoSync ---
+  emit(SettingInfo::String(StrId::STR_TESSERAE_SERVER_URL, &SETTINGS.tessServerUrl[0], sizeof(SETTINGS.tessServerUrl),
+                           "tessServerUrl", StrId::STR_TESSERAE));
+  emit(SettingInfo::Toggle(StrId::STR_KO_PUSH_ON_SLEEP, &CrossPointSettings::koSyncPushOnSleep, "koSyncPushOnSleep",
+                           StrId::STR_CAT_SYSTEM));
+  emit(SettingInfo::Toggle(StrId::STR_KO_PULL_ON_WAKE, &CrossPointSettings::koSyncPullOnWake, "koSyncPullOnWake",
+                           StrId::STR_CAT_SYSTEM));
+  emit(SettingInfo::Value(StrId::STR_TESSERAE_AUTO_REFRESH, &CrossPointSettings::tessAutoRefreshMin, {0, 240, 15},
+                          "tessAutoRefreshMin", StrId::STR_CAT_SYSTEM));
+  // Pairing state is managed by TesseraeActivity; stored with the settings but never shown in a list.
+  emit(SettingInfo::String(StrId::STR_TESSERAE_DEVICE_ID, &SETTINGS.tessDeviceId[0], sizeof(SETTINGS.tessDeviceId),
+                           "tessDeviceId")
+           .withWebHidden());
+  emit(SettingInfo::String(StrId::STR_TESSERAE_DEVICE_ID, &SETTINGS.tessDeviceToken[0],
+                           sizeof(SETTINGS.tessDeviceToken), "tessDeviceToken")
+           .withWebHidden());  // plain key: keeps the pairing the CrossInk firmware stored in settings.json
+  emit(SettingInfo::String(StrId::STR_TESSERAE_DEVICE_ID, &SETTINGS.tessEtag[0], sizeof(SETTINGS.tessEtag), "tessEtag")
+           .withWebHidden());
   // --- Status Bar Settings (web-only, uses StatusBarSettingsActivity) ---
   emit(SettingInfo::Toggle(StrId::STR_CHAPTER_PAGE_COUNT, &CrossPointSettings::statusBarChapterPageCount,
                            "statusBarChapterPageCount", StrId::STR_CUSTOMISE_STATUS_BAR));

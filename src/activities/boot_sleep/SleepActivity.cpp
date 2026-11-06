@@ -7,8 +7,10 @@
 #include <FontCacheManager.h>
 #include <FsHelpers.h>
 #include <GfxRenderer.h>
+#include <HalClock.h>
 #include <HalDisplay.h>
 #include <HalGPIO.h>
+#include <HalPowerManager.h>
 #include <HalStorage.h>
 #include <I18n.h>
 #include <Memory.h>
@@ -18,18 +20,23 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <functional>
 #include <limits>
 #include <string>
 
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
+#include "RecentBooksStore.h"
 #include "activities/reader/ReaderUtils.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
 #include "images/Logo120.h"
 #include "images/MoonIcon.h"
+#include "network/TesseraeClient.h"
+#include "util/BookProgress.h"
 
 namespace {
 // Metalio: B/W sleep images use the full 0xF7 waveform instead of HALF (two
@@ -681,6 +688,53 @@ void releaseSdFontCachesForDecode(const GfxRenderer& renderer) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// NOT SYNCED pill on the Tesserae dashboard. It replaces the "updated" text in the status line (top right, drawn by
+// x4-home-render): that line is 18 px from the right edge, a battery block 70 px wide, an 8 px gap, then the
+// "updated" box the pill covers; the Leave pill sits on the row below, so nothing else shares this spot.
+// ---------------------------------------------------------------------------
+constexpr int kTesseraeStatusRightInset = 18 + 70 + 8;  // pill's right edge, from the screen's right edge
+constexpr int kTesseraeHeaderCenterFromTop = 21;        // vertical centre of the status line
+constexpr int kTesseraePillPadX = 4;
+constexpr int kTesseraePillPadY = 1;
+
+void drawNotSyncedPill(const GfxRenderer& renderer) {
+  const int fontId = SMALL_FONT_ID;
+  const char* label = "NOT SYNCED";
+  const int textW = renderer.getTextWidth(fontId, label);
+  const int textH = renderer.getLineHeight(fontId);
+  const int badgeW = textW + kTesseraePillPadX * 2;
+  const int badgeH = textH + kTesseraePillPadY * 2;
+  const int badgeX = renderer.getScreenWidth() - badgeW - kTesseraeStatusRightInset;
+  const int badgeY = kTesseraeHeaderCenterFromTop - badgeH / 2;
+  // Filled black rectangle with white text.
+  renderer.fillRect(badgeX, badgeY, badgeW, badgeH, true);
+  renderer.drawText(fontId, badgeX + kTesseraePillPadX, badgeY + kTesseraePillPadY, label, false);
+}
+
+// Rounded stroke digits for the power-off clock. A "1" is a single bar, so its cell is narrow and the clock stays
+// visually centred.
+int clockDigitWidth(const int digit, const int w, const int t) { return digit == 1 ? t : w; }
+
+void drawClockDigit(const GfxRenderer& r, const int x, const int y, const int w, const int h, const int t,
+                    const int digit) {
+  static constexpr uint8_t kSegments[10] = {0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F};  // a..g
+  const uint8_t m = kSegments[digit % 10];
+  const int half = h / 2;
+  const int rad = t / 2;
+  auto bar = [&](const int bx, const int by, const int bw, const int bh) {
+    r.fillRoundedRect(bx, by, bw, bh, rad, Color::Black);
+  };
+  if (digit == 1) return bar(x, y, t, h);
+  if (m & 0x01) bar(x, y, w, t);                                    // a
+  if (m & 0x02) bar(x + w - t, y, t, half + t / 2);                 // b
+  if (m & 0x04) bar(x + w - t, y + half - t / 2, t, half + t / 2);  // c
+  if (m & 0x08) bar(x, y + h - t, w, t);                            // d
+  if (m & 0x10) bar(x, y + half - t / 2, t, half + t / 2);          // e
+  if (m & 0x20) bar(x, y, t, half + t / 2);                         // f
+  if (m & 0x40) bar(x, y + half - t / 2, w, t);                     // g
+}
+
 }  // namespace
 
 void SleepActivity::onEnter() {
@@ -725,6 +779,11 @@ void SleepActivity::onEnter() {
       return renderCoverSleepScreen();
     }
     return renderTransparentCustomSleepScreen();
+  }
+
+  // The Tesserae dashboard decides for itself whether a popup is worth an extra e-ink refresh.
+  if (sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::TESSERAE_SLEEP) {
+    return renderTesseraeSleepScreen();
   }
 
   // Show popup with reader orientation only when going to sleep from reader
@@ -857,6 +916,7 @@ void SleepActivity::renderBitmapSleepScreen(const Bitmap& bitmap, const bool pre
     renderer.displayBuffer(kSleepClean);
     return;
   }
+  if (tesseraePill) drawNotSyncedPill(renderer);
 
   if (!preserveBackground &&
       SETTINGS.sleepScreenCoverFilter == CrossPointSettings::SLEEP_SCREEN_COVER_FILTER::INVERTED_BLACK_AND_WHITE) {
@@ -912,6 +972,8 @@ void SleepActivity::renderBitmapSleepScreen(const Bitmap& bitmap, const bool pre
         ready = false;
         break;
       }
+      // Stamp the pill into each grayscale plane so it appears in the final composite.
+      if (tesseraePill) drawNotSyncedPill(renderer);
       if (plane == GfxRenderer::GRAYSCALE_LSB)
         renderer.copyGrayscaleLsbBuffers();
       else
@@ -1097,6 +1159,210 @@ void SleepActivity::renderCoverSleepScreen() const {
   }
 
   return (this->*renderNoCoverSleepScreen)();
+}
+
+// Stand-in drawn on the device at power-off, before the dashboard has been refreshed: the clock, date and battery
+// are the device's own, and the book is whatever is open. The full dashboard replaces it after the next refresh.
+void SleepActivity::renderPowerOffScreen() const {
+  TesseraeClient::setScreenState(TesseraeClient::ScreenState::OTHER);
+  renderer.setOrientation(GfxRenderer::Orientation::Portrait);
+  renderer.clearScreen();
+  const int W = renderer.getScreenWidth();
+  const int H = renderer.getScreenHeight();
+  constexpr int kMargin = 18;
+  constexpr int kInfoLineY = 40 + 150 + 12;  // date and battery share this line, below the clock
+
+  // Top half: status, clock, date, battery.
+  renderer.drawCenteredText(UI_10_FONT_ID, 8, "Sleeping...", true, EpdFontFamily::BOLD);
+
+  struct tm now{};
+  if (halClock.isAvailable() && halClock.localTime(now)) {
+    const int hour12 = now.tm_hour % 12 == 0 ? 12 : now.tm_hour % 12;
+    constexpr int dw = 84, dh = 150, dt = 20, gap = 18, colonW = 22;
+    const int digits[4] = {hour12 / 10 == 0 ? -1 : hour12 / 10, hour12 % 10, now.tm_min / 10, now.tm_min % 10};
+    int totalW = colonW;
+    for (const int d : digits) {
+      if (d < 0) continue;
+      totalW += clockDigitWidth(d, dw, dt) + gap;
+    }
+    int x = (W - totalW) / 2;
+    const int y = 40;
+    for (int k = 0; k < 4; k++) {
+      const int d = digits[k];
+      if (d < 0) continue;
+      drawClockDigit(renderer, x, y, dw, dh, dt, d);
+      x += clockDigitWidth(d, dw, dt) + gap;
+      if (k == 1) {
+        renderer.fillRoundedRect(x, y + dh / 3 - colonW / 2, colonW, colonW, colonW / 2, Color::Black);
+        renderer.fillRoundedRect(x, y + 2 * dh / 3 - colonW / 2, colonW, colonW, colonW / 2, Color::Black);
+        x += colonW + gap;
+      }
+    }
+    // AM/PM sits just right of the last digit, on its bottom edge.
+    renderer.drawText(UI_10_FONT_ID, x - gap + 8, y + dh - renderer.getLineHeight(UI_10_FONT_ID),
+                      now.tm_hour >= 12 ? "PM" : "AM", true, EpdFontFamily::BOLD);
+    static const char* const kDays[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+    static const char* const kMonths[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                          "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+    char line[48] = "";
+    if (now.tm_mon >= 0 && now.tm_mon < 12 && now.tm_wday >= 0 && now.tm_wday < 7) {
+      snprintf(line, sizeof(line), "%s %s %d", kDays[now.tm_wday], kMonths[now.tm_mon], now.tm_mday);
+    }
+    renderer.drawText(UI_12_FONT_ID, kMargin, kInfoLineY, line, true, EpdFontFamily::BOLD);
+  }
+
+  const int battery = powerManager.getBatteryPercentage();
+  {
+    constexpr int bw = 34, bh = 16;
+    char pct[8];
+    snprintf(pct, sizeof(pct), "%d%%", battery);
+    const int textW = renderer.getTextWidth(UI_10_FONT_ID, pct, EpdFontFamily::BOLD);
+    const int bx = W - kMargin - (bw + 12 + textW);
+    const int lineCentre = kInfoLineY + renderer.getLineHeight(UI_12_FONT_ID) / 2;
+    const int by = lineCentre - bh / 2;
+    renderer.drawRect(bx, by, bw, bh, 2, true);
+    renderer.fillRect(bx + bw, by + 4, 3, bh - 8, true);
+    renderer.fillRect(bx + 4, by + 4, std::max(1, (bw - 8) * std::min(100, std::max(0, battery)) / 100), bh - 8, true);
+    renderer.drawText(UI_10_FONT_ID, bx + bw + 12, lineCentre - renderer.getLineHeight(UI_10_FONT_ID) / 2, pct, true,
+                      EpdFontFamily::BOLD);
+  }
+
+  renderer.fillRect(kMargin, 244, W - kMargin * 2, 4, true);
+
+  // Bottom three quarters: the open book, as on the dashboard's footer.
+  const std::string& path = APP_STATE.openEpubPath;
+  if (!path.empty()) {
+    RecentBook book;
+    for (const auto& b : RECENT_BOOKS.getBooks()) {
+      if (b.path == path) {
+        book = b;
+        break;
+      }
+    }
+    // A cover bitmap is only ever drawn at its own size or smaller, so make one as big as the space allows.
+    constexpr int kBigCoverW = 272;
+    constexpr int kBigCoverH = 408;
+    const auto existing = [](const std::string& p) { return !p.empty() && Storage.exists(p.c_str()); };
+    std::string coverPath;
+    if (FsHelpers::hasReflowableBookExtension(path)) {
+      auto epub = makeUniqueNoThrow<Epub>(path, "/.crosspoint");
+      if (epub) {
+        const std::string thumb = epub->getThumbBmpPath(kBigCoverH);
+        if (existing(thumb)) {
+          coverPath = thumb;
+        } else if (epub->load(/*buildIfMissing=*/true, /*skipLoadingCss=*/true) && epub->generateThumbBmp(kBigCoverH) &&
+                   existing(thumb)) {
+          coverPath = thumb;
+        }
+      }
+    }
+    if (coverPath.empty() && !book.coverBmpPath.empty()) {
+      for (const std::string& candidate :
+           {UITheme::getCoverThumbPath(book.coverBmpPath, UITheme::getInstance().getMetrics().homeCoverHeight),
+            book.coverBmpPath}) {
+        if (existing(candidate)) {
+          coverPath = candidate;
+          break;
+        }
+      }
+    }
+
+    const int boxX = kMargin, boxY = 264, boxW = kBigCoverW, boxH = H - 264 - 24;
+    int coverRight = boxX + boxW;
+    int coverTop = boxY, coverHeight = boxH;
+    HalFile file;
+    if (!coverPath.empty() && Storage.openFileForRead("SLP", coverPath, file)) {
+      Bitmap bitmap(file);
+      if (bitmap.parseHeaders() == BmpReaderError::Ok && bitmap.getWidth() > 0 && bitmap.getHeight() > 0) {
+        const float scale =
+            std::min(static_cast<float>(boxW) / bitmap.getWidth(), static_cast<float>(boxH) / bitmap.getHeight());
+        const int cw = static_cast<int>(bitmap.getWidth() * scale);
+        const int ch = static_cast<int>(bitmap.getHeight() * scale);
+        const int cy = boxY + (boxH - ch) / 2;
+        renderer.drawBitmap(bitmap, boxX, cy, cw, ch);
+        renderer.drawRect(boxX, cy, cw, ch, 1, true);
+        coverRight = boxX + cw;
+        coverTop = cy;
+        coverHeight = ch;
+      }
+      file.close();
+    }
+
+    const int tx = coverRight + 18;
+    const int tw = W - tx - kMargin;
+    const auto titleLines = renderer.wrappedText(UI_12_FONT_ID, book.title.c_str(), tw, 6, EpdFontFamily::BOLD);
+    const auto authorLines = renderer.wrappedText(UI_10_FONT_ID, book.author.c_str(), tw, 2);
+    const int titleH = renderer.getLineHeight(UI_12_FONT_ID);
+    const int authorH = renderer.getLineHeight(UI_10_FONT_ID);
+    const int percent = loadBookProgress(path);
+    const bool hasPercent = percent >= 0;
+    const int blockH = static_cast<int>(titleLines.size()) * titleH + 10 +
+                       static_cast<int>(authorLines.size()) * authorH + (hasPercent ? 28 + 4 + 22 : 0);
+    int ty = coverTop + std::max(0, (coverHeight - blockH) / 2);
+    for (const auto& line : titleLines) {
+      renderer.drawText(UI_12_FONT_ID, tx, ty, line.c_str(), true, EpdFontFamily::BOLD);
+      ty += titleH;
+    }
+    ty += 10;
+    for (const auto& line : authorLines) {
+      renderer.drawText(UI_10_FONT_ID, tx, ty, line.c_str());
+      ty += authorH;
+    }
+    if (hasPercent) {
+      ty += 28;
+      // No number: the dashboard footer shows the same bar, so the two can't disagree.
+      ty += 4;
+      renderer.drawRect(tx, ty, tw, 22, 2, true);
+      renderer.fillRect(tx + 4, ty + 4, std::max(0, (tw - 8) * std::min(100, percent) / 100), 14, true);
+    }
+  }
+
+  renderer.displayBuffer(kSleepClean);
+}
+
+void SleepActivity::renderTesseraeSleepScreen() const {
+  // Power-off must be quick: show the stand-in now and let the short timed wake do the Wi-Fi, sync and fetch. The
+  // timed-wake path itself (and an unpaired device, which has no wake timer) refreshes inline.
+  const bool deferNetwork = !TesseraeClient::isTimedWake() && SETTINGS.tessDeviceToken[0] != '\0' &&
+                            SETTINGS.tessAutoRefreshMin != 0 && SETTINGS.tessServerUrl[0] != '\0';
+  if (deferNetwork) {
+    TesseraeClient::deferRefresh();
+    return renderPowerOffScreen();
+  }
+
+  // An inline refresh (unpaired / no wake timer) takes seconds: say so. A timed wake has nobody watching.
+  if (!TesseraeClient::isTimedWake() && SETTINGS.tessServerUrl[0] != '\0') {
+    if (APP_STATE.lastSleepFromReader) ReaderUtils::applyOrientation(renderer, SETTINGS.orientation);
+    GUI.drawPopup(renderer, tr(STR_ENTERING_SLEEP));
+    renderer.setOrientation(GfxRenderer::Orientation::Portrait);
+  }
+
+  // Pull the freshest dashboard before drawing (a no-op after a timed wake already did); on failure the cached
+  // frame below is used.
+  TesseraeClient::refreshBeforeSleep();
+  if (TesseraeClient::frameIsStale()) TesseraeClient::markStaleDrawn();
+  tesseraePill = TesseraeClient::syncPillWanted();
+
+  HalFile file;
+  if (Storage.openFileForRead("SLP", TesseraeClient::TESSERAE_CACHE_PATH, file)) {
+    Bitmap bitmap(file);
+    const BmpReaderError parseErr = bitmap.parseHeaders();
+    if (parseErr == BmpReaderError::Ok) {
+      renderBitmapSleepScreen(bitmap);
+      file.close();
+      TesseraeClient::setScreenState(tesseraePill ? TesseraeClient::ScreenState::DASHBOARD_WITH_PILL
+                                                  : TesseraeClient::ScreenState::DASHBOARD);
+      tesseraePill = false;
+      return;
+    }
+    LOG_ERR("SLP", "Tesserae BMP parse failed: %s", Bitmap::errorToString(parseErr));
+    file.close();
+  } else {
+    LOG_INF("SLP", "No Tesserae cached frame at %s — using default sleep screen", TesseraeClient::TESSERAE_CACHE_PATH);
+  }
+  TesseraeClient::setScreenState(TesseraeClient::ScreenState::OTHER);
+  tesseraePill = false;
+  renderDefaultSleepScreen();
 }
 
 void SleepActivity::renderLastScreenSleepScreen() const {
