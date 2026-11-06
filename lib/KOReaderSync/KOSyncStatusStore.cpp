@@ -86,7 +86,7 @@ void KOSyncStatusStore::saveToFile() const {
   for (const auto& kv : currentPos_) {
     obj[kv.first + "|c"] = kv.second;
   }
-  if (!PersistableStoreBase::writeDocToFileAtomically(getFilePath(), doc)) {
+  if (!PersistableStoreBase::writeDocToFile(getFilePath(), doc)) {
     LOG_ERR("KOSyncStatus", "Failed to save sync status file");
   }
 }
