@@ -61,6 +61,13 @@ TEST(LibrarySyncCore, StateLinesRoundTrip) {
 TEST(LibrarySyncCore, SchedulesAndBudgets) {
   EXPECT_FALSE(dueNow(Schedule::MANUAL, 100, 0, true, true));
   EXPECT_TRUE(dueNow(Schedule::EVERY_WAKE, 100, 99, false, false));
+  EXPECT_FALSE(dueNow(Schedule::TWICE_DAILY, 900 + 719, 900, false, false));
+  EXPECT_TRUE(dueNow(Schedule::TWICE_DAILY, 900 + 720, 900, false, false));  // 12 h after the last completed pass
+  EXPECT_TRUE(dueNow(Schedule::TWICE_DAILY, 1000, 900, false, true));        // backlog keeps going
+  EXPECT_TRUE(dueNow(Schedule::TWICE_DAILY, -1, 0, false, false));           // no clock: do not starve
+  EXPECT_EQ(nextSchedule(Schedule::MANUAL), Schedule::TWICE_DAILY);          // turning it on picks twice daily
+  EXPECT_EQ(nextSchedule(Schedule::TWICE_DAILY), Schedule::DAILY);
+  EXPECT_EQ(nextSchedule(Schedule::CHARGING), Schedule::MANUAL);
   EXPECT_FALSE(dueNow(Schedule::DAILY, 1000, 900, false, false));
   EXPECT_TRUE(dueNow(Schedule::DAILY, 900 + 1440, 900, false, false));
   EXPECT_TRUE(dueNow(Schedule::DAILY, 1000, 900, false, true));  // backlog keeps going

@@ -73,6 +73,8 @@ Result run(bool manual, const AbortFn& abort, const ProgressFn& progress, Progre
 
 /** True when a background pass is due now (settings, schedule, battery). Cheap: reads the config only. */
 bool backgroundDue();
+// The home network, when automatic sync is on and limited to it: the timed-wake Wi-Fi join tries it first.
+std::string preferredJoinSsid();
 
 /** Background pass on the timed wake. Wi-Fi is already up from the dashboard refresh. Saves state; never throws. */
 Result runBackground(const AbortFn& abort);

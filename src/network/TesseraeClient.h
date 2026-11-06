@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <string>
 
 /**
  * HTTP client for the Tesserae dashboard REST API (/api/v1/device/*).
@@ -51,6 +52,8 @@ class TesseraeClient {
 
   /** Blocking join of the saved Wi-Fi network (10 s timeout). Pair with leaveWifi(). */
   static bool joinSavedWifi();
+  // Tried first on the next timed-wake join when that network is in range (Library Sync's home network).
+  static void setPreferredJoinSsid(const std::string& ssid);
   static void leaveWifi();
 
   /** Convert an error code to a short English string for logging. */

@@ -1255,6 +1255,7 @@ static void timedWakeRefreshAndResleep() {
   // Keep Wi-Fi up after a good refresh when a library pass is due, instead of joining a second time.
   const bool libraryPassDue = LibrarySync::backgroundDue();
   TesseraeClient::keepWifiAfterRefresh(libraryPassDue);
+  TesseraeClient::setPreferredJoinSsid(LibrarySync::preferredJoinSsid());
   const auto err = TesseraeClient::refreshBeforeSleep(/*timedWake=*/true);
   TesseraeClient::setAbortCheck(nullptr);
   const bool wifiKept = libraryPassDue && err == TesseraeClient::OK;

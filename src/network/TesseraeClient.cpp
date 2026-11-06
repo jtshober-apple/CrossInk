@@ -25,6 +25,7 @@
 #include "WifiCredentialStore.h"
 #include "activities/home/RecentBookProgress.h"
 #include "network/KoSyncQuiet.h"
+#include "network/WifiJoin.h"
 #include "network/WifiUtils.h"
 #include "util/RtcMinutes.h"
 
@@ -38,8 +39,8 @@ constexpr int PANEL_H = 800;
 constexpr const char* FIRMWARE_ID = "crossink";
 constexpr const char* FRAME_TMP_PATH = "/.crosspoint/tesserae_frame.tmp";
 constexpr uint32_t SLEEP_WIFI_TIMEOUT_MS = 7000;
-// A timed wake has nobody waiting on it, so it gives a slow or flaky network much longer, and tries twice.
-constexpr uint32_t TIMED_WIFI_TIMEOUT_MS = 20000;
+// A timed wake has nobody waiting on it: scan once, then try every saved network that is in range, within this cap.
+constexpr uint32_t TIMED_WIFI_TOTAL_MS = 25000;
 constexpr uint32_t RETRY_AFTER_FAILURE_SECONDS = 300;
 // Failed refreshes back off (5 min, then 15 min, then the normal interval) so a device that is out of reach of its
 // saved Wi-Fi does not keep waking every few minutes.
@@ -59,33 +60,23 @@ constexpr uint32_t DEFERRED_REFRESH_SECONDS = 15;
 std::function<bool()> abortCheck;
 bool abortRequested() { return abortCheck && abortCheck(); }
 
-bool connectSavedWifi(const uint32_t timeoutMs = SLEEP_WIFI_TIMEOUT_MS, const int attempts = 1) {
-  std::optional<WifiCredential> cred;
-  const std::string last = WIFI_STORE.getLastConnectedSsid();
-  if (!last.empty()) cred = WIFI_STORE.findCredential(last);
-  if (!cred) cred = WIFI_STORE.getCredentialAt(0);
-  if (!cred) {
-    LOG_DBG(TAG, "sleep refresh: no saved WiFi network");
-    return false;
-  }
+// Wi-Fi comes from the shared WifiJoin helper. A timed wake scans once and tries the saved networks strongest-first
+// (last-connected first when visible) inside one overall cap; the sleep refresh keeps the quick single try.
+std::string preferredJoinSsid;
 
-  WiFi.persistent(false);
-  if (!WiFi.mode(WIFI_STA)) return false;
-  for (int attempt = 0; attempt < attempts; attempt++) {
-    if (attempt > 0) {
-      WiFi.disconnect(false);
-      delay(200);
-    }
-    WiFi.begin(cred->ssid.c_str(), cred->password.c_str());
-    const uint32_t start = millis();
-    while (millis() - start < timeoutMs) {
-      if (hasActiveStationWifiConnection()) return true;
-      if (abortRequested()) return false;
-      delay(100);
-    }
-    LOG_ERR(TAG, "sleep refresh: WiFi connect timed out (%s), attempt %d", cred->ssid.c_str(), attempt + 1);
+bool connectSavedWifi(const bool timedWake = false) {
+  WifiJoin::Options options;
+  options.tag = TAG;
+  options.abort = [] { return abortRequested(); };
+  if (timedWake) {
+    options.totalMs = TIMED_WIFI_TOTAL_MS;
+    options.scan = true;
+    options.preferSsid = preferredJoinSsid;
+  } else {
+    options.totalMs = SLEEP_WIFI_TIMEOUT_MS;
+    options.scan = false;
   }
-  return false;
+  return WifiJoin::joinBest(options);
 }
 
 void wifiOff() {
@@ -459,7 +450,8 @@ void notifyStep(const char* text) {
 }
 }  // namespace
 
-bool TesseraeClient::joinSavedWifi() { return connectSavedWifi(); }
+bool TesseraeClient::joinSavedWifi() { return connectSavedWifi(false); }
+void TesseraeClient::setPreferredJoinSsid(const std::string& ssid) { preferredJoinSsid = ssid; }
 void TesseraeClient::leaveWifi() { wifiOff(); }
 
 void TesseraeClient::markRefreshed() { refreshedThisBoot = true; }
@@ -512,7 +504,7 @@ TesseraeClient::Error TesseraeClient::refreshBeforeSleep(const bool timedWake) {
   const uint32_t startedMs = millis();
   const bool alreadyConnected = hasActiveStationWifiConnection();
   if (!alreadyConnected) notifyStep(tr(STR_STEP_CONNECTING));
-  if (!alreadyConnected && !(timedWake ? connectSavedWifi(TIMED_WIFI_TIMEOUT_MS, 2) : connectSavedWifi())) {
+  if (!alreadyConnected && !(timedWake ? connectSavedWifi(true) : connectSavedWifi(false))) {
     wifiOff();
     if (abortRequested()) return ABORTED;
     lastAttemptFailed = true;

@@ -18,6 +18,7 @@
 #include "components/TouchHeaderBackButton.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
+#include "network/WifiJoin.h"
 #include "util/RtcMinutes.h"
 
 namespace {
@@ -41,6 +42,8 @@ const char* scheduleLabel(const LibrarySync::Schedule schedule) {
       return "Off (manual only)";
     case LibrarySync::Schedule::EVERY_WAKE:
       return "Every background wake";
+    case LibrarySync::Schedule::TWICE_DAILY:
+      return "Twice daily";
     case LibrarySync::Schedule::DAILY:
       return "Daily";
     case LibrarySync::Schedule::CHARGING:
@@ -78,6 +81,16 @@ void LibrarySyncActivity::onEnter() {
   if (WiFi.status() == WL_CONNECTED) {
     startRun();
     return;
+  }
+  {
+    // Try the saved networks without asking (scan once, strongest first); only fall back to the picker if none joins.
+    WifiJoin::Options join;
+    join.tag = "LIBSYNC";
+    join.totalMs = 25000;
+    if (WifiJoin::joinBest(join)) {
+      startRun();
+      return;
+    }
   }
   startActivityForResult(std::make_unique<WifiSelectionActivity>(renderer, mappedInput),
                          [this](const ActivityResult& result) {
@@ -179,8 +192,7 @@ void LibrarySyncActivity::activateRow() {
       silentRestartToNetwork(NetworkBootTarget::LIBRARY_SYNC);
       return;
     case ROW_SCHEDULE:
-      cfg.schedule =
-          static_cast<LibrarySync::Schedule>((static_cast<int>(cfg.schedule) + 1) % LibrarySyncCore::SCHEDULE_COUNT);
+      cfg.schedule = LibrarySyncCore::nextSchedule(cfg.schedule);
       break;
     case ROW_WIFI:
       cfg.homeOnly = !cfg.homeOnly;

@@ -19,12 +19,30 @@
 namespace LibrarySyncCore {
 
 enum class Schedule : uint8_t {
-  MANUAL = 0,      // only "Sync now"
-  EVERY_WAKE = 1,  // every background wake (30 min by default)
-  DAILY = 2,       // check once a day; keep going on later wakes until caught up
-  CHARGING = 3,    // only while USB power is connected
+  MANUAL = 0,       // only "Sync now"
+  EVERY_WAKE = 1,   // every background wake (30 min by default)
+  DAILY = 2,        // check once a day; keep going on later wakes until caught up
+  CHARGING = 3,     // only while USB power is connected
+  TWICE_DAILY = 4,  // about every 12 h from the last completed pass; keep going on later wakes until caught up
 };
-constexpr uint8_t SCHEDULE_COUNT = 4;
+constexpr uint8_t SCHEDULE_COUNT = 5;
+
+// The order the Settings row cycles through. Turning automatic sync on (from MANUAL) lands on TWICE_DAILY.
+inline Schedule nextSchedule(const Schedule current) {
+  switch (current) {
+    case Schedule::MANUAL:
+      return Schedule::TWICE_DAILY;
+    case Schedule::TWICE_DAILY:
+      return Schedule::DAILY;
+    case Schedule::DAILY:
+      return Schedule::EVERY_WAKE;
+    case Schedule::EVERY_WAKE:
+      return Schedule::CHARGING;
+    case Schedule::CHARGING:
+      return Schedule::MANUAL;
+  }
+  return Schedule::MANUAL;
+}
 
 struct ManifestLine {
   std::string id;
@@ -207,6 +225,10 @@ inline bool dueNow(const Schedule schedule, const int64_t nowMin, const int64_t 
       return false;
     case Schedule::EVERY_WAKE:
       return true;
+    case Schedule::TWICE_DAILY:
+      if (backlog) return true;
+      if (nowMin < 0 || lastCheckMin <= 0) return true;
+      return nowMin - lastCheckMin >= 12 * 60;
     case Schedule::DAILY:
       if (backlog) return true;
       if (nowMin < 0 || lastCheckMin <= 0) return true;

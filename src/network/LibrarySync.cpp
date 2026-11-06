@@ -676,6 +676,12 @@ bool backgroundDue() {
   return dueNow(c.schedule, now, c.lastCheckMin, charging, c.backlog);
 }
 
+std::string preferredJoinSsid() {
+  const Config& c = config();
+  if (c.schedule == Schedule::MANUAL || !c.homeOnly) return "";
+  return c.homeSsid;
+}
+
 Result runBackground(const AbortFn& abort) {
   if (!backgroundDue()) return Result::SKIPPED;
   Config& c = config();
