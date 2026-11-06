@@ -1,0 +1,3 @@
+add_executable(WifiJoinCoreTest WifiJoinCoreTest.cpp)
+target_link_libraries(WifiJoinCoreTest PRIVATE crosspoint_test_common GTest::gtest_main)
+gtest_discover_tests(WifiJoinCoreTest)

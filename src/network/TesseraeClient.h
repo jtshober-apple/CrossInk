@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <string>
 
 /**
  * HTTP client for the Tesserae dashboard REST API (/api/v1/device/*).
@@ -100,6 +101,9 @@ class TesseraeClient {
 
   /** Make the next refreshBeforeSleep() a no-op: a timed wake has just fetched and cached the frame. */
   static void markRefreshed();
+
+  /** The timed-wake join tries this SSID first when it is in range (empty = no preference). */
+  static void setPreferredJoinSsid(const std::string& ssid);
   // True while a timed wake redraws the dashboard (the sleep screen then says "Updating display").
   static void setTimedWake(bool timedWake);
   static bool isTimedWake();
