@@ -1241,8 +1241,11 @@ static bool timedWakePowerPressed() {
 // Bounded by a small per-wake budget, never delays the screen update, and gives way to a Power press.
 static void timedWakeLibrarySync(const bool wifiKept) {
   if (!wifiKept) return;
-  LibrarySync::runBackground(timedWakePowerPressed);
+  const auto result = LibrarySync::runBackground(timedWakePowerPressed);
   TesseraeClient::leaveWifi();
+  // Power was pressed during the pass. The dashboard is already on screen, so reboot instead of sleeping through
+  // the press.
+  if (result == LibrarySync::Result::ABORTED) ESP.restart();
 }
 
 static void timedWakeRefreshAndResleep() {
