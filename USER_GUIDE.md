@@ -267,10 +267,10 @@ Settings are grouped into **System**, **Display**, **Reader**, **Controls**, **L
 
 - **Reader Font Family**: Choose the font used for reading:
   
-  - "Noto Sans" (default) - Google's sans-serif font
+  - "Mono" (default) - iA Writer Mono, a monospaced face (SIL OFL), also used for the whole interface
   - Installed SD card families
 
-- **Reader Font Size**: Choose a point size. Built-in and direct TTF/OTF/TTC fonts offer 12, 14, 16, and 18 pt. A `.cpfont` family offers the sizes installed for that family.
+- **Reader Font Size**: Choose a point size. The built-in Mono font offers 9, 10, 11 (default), 12, 14, and 16 pt; direct TTF/OTF/TTC fonts offer every size from 8 to 22 pt. A `.cpfont` family offers the sizes installed for that family.
 
 - **Reader Line Spacing**: Space added between lines, as a percentage of font size: 0%, +10%, +20% (default), +30%, +45%, +60%, or +75%.
 

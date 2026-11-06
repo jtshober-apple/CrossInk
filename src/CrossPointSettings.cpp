@@ -401,14 +401,18 @@ int CrossPointSettings::getReaderFontId() const {
   const uint8_t pt =
       snapToNearestPointSize(BUILTIN_READER_POINT_SIZES, std::size(BUILTIN_READER_POINT_SIZES), fontPointSize);
   switch (pt) {
+    case 9:
+      return MONO_9_FONT_ID;
+    case 10:
+      return MONO_10_FONT_ID;
     case 12:
-      return NOTOSANS_12_FONT_ID;
-    case 16:
-      return NOTOSANS_16_FONT_ID;
-    case 18:
-      return NOTOSANS_18_FONT_ID;
+      return MONO_12_FONT_ID;
     case 14:
+      return MONO_14_FONT_ID;
+    case 16:
+      return MONO_16_FONT_ID;
+    case 11:
     default:
-      return NOTOSANS_14_FONT_ID;
+      return MONO_11_FONT_ID;
   }
 }

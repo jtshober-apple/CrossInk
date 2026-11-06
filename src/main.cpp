@@ -84,44 +84,51 @@ constexpr unsigned long X4PRO_POWER_CLICK_MAX_HOLD_MS = 300;
 // while the button is held; swallow the one release that ends that wake gesture.
 static bool wakePowerReleasePending = false;
 
-// Fonts
-EpdFont notosans14RegularFont(&notosans_14_regular);
-EpdFont notosans14BoldFont(&notosans_14_bold);
-EpdFont notosans14ItalicFont(&notosans_14_italic);
-EpdFont notosans14BoldItalicFont(&notosans_14_bolditalic);
-EpdFontFamily notosans14FontFamily(14, &notosans14RegularFont, &notosans14BoldFont, &notosans14ItalicFont,
-                                   &notosans14BoldItalicFont);
+// Fonts: iA Writer Mono (OFL) is the system, UI and reading font. Reading sizes are compiled in at 9-16 pt; the
+// default size is always present, the rest drop out of OMIT_FONTS builds. More sizes/families come from the SD card.
+EpdFont mono11RegularFont(&mono_11_regular);
+EpdFont mono11BoldFont(&mono_11_bold);
+EpdFont mono11ItalicFont(&mono_11_italic);
+EpdFont mono11BoldItalicFont(&mono_11_bolditalic);
+EpdFontFamily mono11FontFamily(11, &mono11RegularFont, &mono11BoldFont, &mono11ItalicFont, &mono11BoldItalicFont);
 #ifndef OMIT_FONTS
-EpdFont notosans12RegularFont(&notosans_12_regular);
-EpdFont notosans12BoldFont(&notosans_12_bold);
-EpdFont notosans12ItalicFont(&notosans_12_italic);
-EpdFont notosans12BoldItalicFont(&notosans_12_bolditalic);
-EpdFontFamily notosans12FontFamily(12, &notosans12RegularFont, &notosans12BoldFont, &notosans12ItalicFont,
-                                   &notosans12BoldItalicFont);
-EpdFont notosans16RegularFont(&notosans_16_regular);
-EpdFont notosans16BoldFont(&notosans_16_bold);
-EpdFont notosans16ItalicFont(&notosans_16_italic);
-EpdFont notosans16BoldItalicFont(&notosans_16_bolditalic);
-EpdFontFamily notosans16FontFamily(16, &notosans16RegularFont, &notosans16BoldFont, &notosans16ItalicFont,
-                                   &notosans16BoldItalicFont);
-EpdFont notosans18RegularFont(&notosans_18_regular);
-EpdFont notosans18BoldFont(&notosans_18_bold);
-EpdFont notosans18ItalicFont(&notosans_18_italic);
-EpdFont notosans18BoldItalicFont(&notosans_18_bolditalic);
-EpdFontFamily notosans18FontFamily(18, &notosans18RegularFont, &notosans18BoldFont, &notosans18ItalicFont,
-                                   &notosans18BoldItalicFont);
+EpdFont mono9RegularFont(&mono_9_regular);
+EpdFont mono9BoldFont(&mono_9_bold);
+EpdFont mono9ItalicFont(&mono_9_italic);
+EpdFont mono9BoldItalicFont(&mono_9_bolditalic);
+EpdFontFamily mono9FontFamily(9, &mono9RegularFont, &mono9BoldFont, &mono9ItalicFont, &mono9BoldItalicFont);
+EpdFont mono10RegularFont(&mono_10_regular);
+EpdFont mono10BoldFont(&mono_10_bold);
+EpdFont mono10ItalicFont(&mono_10_italic);
+EpdFont mono10BoldItalicFont(&mono_10_bolditalic);
+EpdFontFamily mono10FontFamily(10, &mono10RegularFont, &mono10BoldFont, &mono10ItalicFont, &mono10BoldItalicFont);
+EpdFont mono12RegularFont(&mono_12_regular);
+EpdFont mono12BoldFont(&mono_12_bold);
+EpdFont mono12ItalicFont(&mono_12_italic);
+EpdFont mono12BoldItalicFont(&mono_12_bolditalic);
+EpdFontFamily mono12FontFamily(12, &mono12RegularFont, &mono12BoldFont, &mono12ItalicFont, &mono12BoldItalicFont);
+EpdFont mono14RegularFont(&mono_14_regular);
+EpdFont mono14BoldFont(&mono_14_bold);
+EpdFont mono14ItalicFont(&mono_14_italic);
+EpdFont mono14BoldItalicFont(&mono_14_bolditalic);
+EpdFontFamily mono14FontFamily(14, &mono14RegularFont, &mono14BoldFont, &mono14ItalicFont, &mono14BoldItalicFont);
+EpdFont mono16RegularFont(&mono_16_regular);
+EpdFont mono16BoldFont(&mono_16_bold);
+EpdFont mono16ItalicFont(&mono_16_italic);
+EpdFont mono16BoldItalicFont(&mono_16_bolditalic);
+EpdFontFamily mono16FontFamily(16, &mono16RegularFont, &mono16BoldFont, &mono16ItalicFont, &mono16BoldItalicFont);
 
 #endif  // OMIT_FONTS
 
-EpdFont smallFont(&ubuntu_8_regular);
+EpdFont smallFont(&monoui_8_regular);
 EpdFontFamily smallFontFamily(8, &smallFont);
 
-EpdFont ui10RegularFont(&ubuntu_10_regular);
-EpdFont ui10BoldFont(&ubuntu_10_bold);
+EpdFont ui10RegularFont(&monoui_10_regular);
+EpdFont ui10BoldFont(&monoui_10_bold);
 EpdFontFamily ui10FontFamily(10, &ui10RegularFont, &ui10BoldFont);
 
-EpdFont ui12RegularFont(&ubuntu_12_regular);
-EpdFont ui12BoldFont(&ubuntu_12_bold);
+EpdFont ui12RegularFont(&monoui_12_regular);
+EpdFont ui12BoldFont(&monoui_12_bold);
 EpdFontFamily ui12FontFamily(12, &ui12RegularFont, &ui12BoldFont);
 
 // Definitions for SilentRestart.h. RTC_NOINIT survives ESP.restart() but not power loss.
@@ -571,11 +578,13 @@ void setupDisplayAndFonts(bool seamless = false, bool loadSdFonts = true) {
   }
   fontCacheManager.setFontDecompressor(&fontDecompressor);
   renderer.setFontCacheManager(&fontCacheManager);
-  renderer.insertFont(NOTOSANS_14_FONT_ID, notosans14FontFamily);
+  renderer.insertFont(MONO_11_FONT_ID, mono11FontFamily);
 #ifndef OMIT_FONTS
-  renderer.insertFont(NOTOSANS_12_FONT_ID, notosans12FontFamily);
-  renderer.insertFont(NOTOSANS_16_FONT_ID, notosans16FontFamily);
-  renderer.insertFont(NOTOSANS_18_FONT_ID, notosans18FontFamily);
+  renderer.insertFont(MONO_9_FONT_ID, mono9FontFamily);
+  renderer.insertFont(MONO_10_FONT_ID, mono10FontFamily);
+  renderer.insertFont(MONO_12_FONT_ID, mono12FontFamily);
+  renderer.insertFont(MONO_14_FONT_ID, mono14FontFamily);
+  renderer.insertFont(MONO_16_FONT_ID, mono16FontFamily);
 #endif  // OMIT_FONTS
   renderer.insertFont(UI_10_FONT_ID, ui10FontFamily);
   renderer.insertFont(UI_12_FONT_ID, ui12FontFamily);

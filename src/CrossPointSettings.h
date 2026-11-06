@@ -119,7 +119,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // Legacy 1.4-and-earlier files stored a 0..3 SMALL/MEDIUM/LARGE/EXTRA_LARGE
   // slot; fromJson() folds that range up (see LEGACY_FONT_SIZE_MAX).
   static constexpr uint8_t LEGACY_FONT_SIZE_MAX = 3;
-  static constexpr uint8_t DEFAULT_FONT_POINT_SIZE = 14;
+  static constexpr uint8_t DEFAULT_FONT_POINT_SIZE = 11;
   // Line height as a percent of font size.
   enum LINE_COMPRESSION {
     LINE_SPACING_100 = 0,
