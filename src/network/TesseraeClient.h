@@ -91,6 +91,10 @@ class TesseraeClient {
    */
   static Error refreshBeforeSleep(bool timedWake = false);
 
+  /** Leave Wi-Fi on after a successful timed-wake refresh so a follow-up job can reuse it; the caller then calls
+   * leaveWifi(). */
+  static void keepWifiAfterRefresh(bool keep);
+
   /** Make the next refreshBeforeSleep() a no-op: a timed wake has just fetched and cached the frame. */
   static void markRefreshed();
   // True while a timed wake redraws the dashboard (the sleep screen then says "Updating display").

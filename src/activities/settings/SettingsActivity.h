@@ -54,6 +54,7 @@ enum class SettingAction {
   TtfRendering,
   ClockSync,
   TesseraeSync,
+  LibrarySync,
 };
 
 struct SettingInfo {

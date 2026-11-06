@@ -450,6 +450,7 @@ bool lastAttemptFailed = false;
 RTC_DATA_ATTR uint8_t failureChain = 0;
 RTC_DATA_ATTR uint8_t quickChain = 0;
 bool quickRecheck = false;
+bool keepWifi = false;
 bool deferredRefresh = false;
 std::function<void(const char*)> stepListener;
 
@@ -462,6 +463,7 @@ bool TesseraeClient::joinSavedWifi() { return connectSavedWifi(); }
 void TesseraeClient::leaveWifi() { wifiOff(); }
 
 void TesseraeClient::markRefreshed() { refreshedThisBoot = true; }
+void TesseraeClient::keepWifiAfterRefresh(const bool keep) { keepWifi = keep; }
 void TesseraeClient::setTimedWake(const bool v) { timedWakeRender = v; }
 bool TesseraeClient::isTimedWake() { return timedWakeRender; }
 uint32_t TesseraeClient::retryAfterFailureSeconds() {
@@ -582,7 +584,9 @@ TesseraeClient::Error TesseraeClient::refreshBeforeSleep(const bool timedWake) {
   setFailureMark(lastAttemptFailed);
 
   notifyStep(tr(STR_ENTERING_SLEEP));
-  if (!alreadyConnected) wifiOff();
+  const bool keepRadio = timedWake && keepWifi && err == OK;
+  keepWifi = false;
+  if (!alreadyConnected && !keepRadio) wifiOff();
   return err;
 }
 

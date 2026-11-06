@@ -41,6 +41,7 @@
 #include "activities/network/TesseraeActivity.h"
 #include "activities/network/WifiSelectionActivity.h"
 #include "activities/reader/GlobalReadingStats.h"
+#include "activities/settings/LibrarySyncActivity.h"
 #include "activities/util/ConfirmationActivity.h"
 #include "activities/util/IntervalSelectionActivity.h"
 #include "activities/util/KeyboardEntryActivity.h"
@@ -1151,6 +1152,9 @@ void SettingsActivity::toggleCurrentSetting() {
         break;
       case SettingAction::TesseraeSync:
         startActivityForResult(std::make_unique<TesseraeActivity>(renderer, mappedInput), resultHandler);
+        break;
+      case SettingAction::LibrarySync:
+        startActivityForResult(std::make_unique<LibrarySyncActivity>(renderer, mappedInput), resultHandler);
         break;
       case SettingAction::OPDSBrowser:
         startActivityForResult(std::make_unique<OpdsServerListActivity>(renderer, mappedInput), resultHandler);

@@ -102,12 +102,14 @@ inline esp_sleep_wakeup_cause_t esp_sleep_get_wakeup_cause() { return ESP_SLEEP_
 #include "activities/settings/FontDownloadActivity.h"
 #include "activities/settings/KOReaderAuthActivity.h"
 #include "activities/settings/KOReaderSettingsActivity.h"
+#include "activities/settings/LibrarySyncActivity.h"
 #include "activities/settings/OtaUpdateActivity.h"
 #include "activities/settings/SdFirmwareUpdateActivity.h"
 #include "components/UITheme.h"
 #include "components/icons/tablerFilledIcons.h"
 #include "fontIds.h"
 #include "network/KoSyncQuiet.h"
+#include "network/LibrarySync.h"
 #include "network/TesseraeClient.h"
 #include "network/UsbSerialFileTransfer.h"
 #ifdef SIMULATOR
@@ -1222,21 +1224,37 @@ void setupDisplayAndFonts(const bool seamless, const bool loadReaderResources, c
 // where the reader was put to sleep.
 // Returns only when the user pressed Power during the refresh: the caller then boots normally instead of making them
 // wait for the dashboard redraw and a second press. Every other path ends in deep sleep.
+// True once the user presses Power during a background wake (a short press, or a long one when short presses do not
+// wake): the background work gives up so the reader boots normally.
+static bool timedWakePowerPressed() {
+  static uint32_t heldSince = 0;
+  gpio.update();
+  if (!gpio.isPressed(HalGPIO::BTN_POWER)) {
+    heldSince = 0;
+    return false;
+  }
+  if (heldSince == 0) heldSince = millis();
+  return SETTINGS.shortPowerPressWakes() || millis() - heldSince >= CrossPointSettings::POWER_BUTTON_LONG_PRESS_MS;
+}
+
+// Library Sync's background pass: runs after the dashboard is on screen, on the Wi-Fi session the refresh kept up.
+// Bounded by a small per-wake budget, never delays the screen update, and gives way to a Power press.
+static void timedWakeLibrarySync(const bool wifiKept) {
+  if (!wifiKept) return;
+  LibrarySync::runBackground(timedWakePowerPressed);
+  TesseraeClient::leaveWifi();
+}
+
 static void timedWakeRefreshAndResleep() {
   LOG_INF("BOOT", "Timed wake: refreshing Tesserae dashboard");
   TesseraeClient::setTimedWake(true);
-  TesseraeClient::setAbortCheck([]() {
-    static uint32_t heldSince = 0;
-    gpio.update();
-    if (!gpio.isPressed(HalGPIO::BTN_POWER)) {
-      heldSince = 0;
-      return false;
-    }
-    if (heldSince == 0) heldSince = millis();
-    return SETTINGS.shortPowerPressWakes() || millis() - heldSince >= CrossPointSettings::POWER_BUTTON_LONG_PRESS_MS;
-  });
+  TesseraeClient::setAbortCheck(timedWakePowerPressed);
+  // Keep Wi-Fi up after a good refresh when a library pass is due, instead of joining a second time.
+  const bool libraryPassDue = LibrarySync::backgroundDue();
+  TesseraeClient::keepWifiAfterRefresh(libraryPassDue);
   const auto err = TesseraeClient::refreshBeforeSleep(/*timedWake=*/true);
   TesseraeClient::setAbortCheck(nullptr);
+  const bool wifiKept = libraryPassDue && err == TesseraeClient::OK;
   if (err == TesseraeClient::ABORTED) {
     LOG_INF("BOOT", "Timed wake: Power pressed, booting normally");
     TesseraeClient::setTimedWake(false);
@@ -1249,12 +1267,14 @@ static void timedWakeRefreshAndResleep() {
     setupDisplayAndFonts(/*seamless=*/true, /*loadReaderResources=*/false, /*useReaderRenderStack=*/true);
     deepSleepInProgress = true;
     activityManager.goToSleep(false);
+    timedWakeLibrarySync(wifiKept);
     libraryScanSleepToken.save(!library::libraryIndexNeedsRefresh());
     Storage.shutdown();
     putTiltSensorToSleepForDeepSleep();
     display.deepSleep();
   } else {
     LOG_INF("BOOT", "Timed wake: no new frame (%s), back to sleep", TesseraeClient::errorString(err));
+    timedWakeLibrarySync(wifiKept);
     libraryScanSleepToken.save(!library::libraryIndexNeedsRefresh());
     Storage.shutdown();
   }
@@ -1622,6 +1642,17 @@ void setup() {
       case NetworkBootTarget::FILE_TRANSFER:
         launched = activityManager.resumeFileTransferFromNetworkBoot(snapshotPayload);
         break;
+      case NetworkBootTarget::LIBRARY_SYNC: {
+        auto syncActivity = makeUniqueNoThrow<LibrarySyncActivity>(renderer, mappedInputManager, /*runNow=*/true);
+        if (syncActivity) {
+          activityManager.replaceActivity(std::move(syncActivity));
+          launched = true;
+        } else {
+          LOG_ERR("MAIN", "OOM: Library Sync activity after minimal boot (free=%u maxAlloc=%u)", ESP.getFreeHeap(),
+                  ESP.getMaxAllocHeap());
+        }
+        break;
+      }
       case NetworkBootTarget::MANAGE_FONTS: {
         auto fontsActivity = makeUniqueNoThrow<FontDownloadActivity>(renderer, mappedInputManager);
         if (fontsActivity) {
