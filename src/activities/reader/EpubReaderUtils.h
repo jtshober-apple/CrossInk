@@ -2,6 +2,7 @@
 
 #include <Epub.h>
 #include <Epub/PageLink.h>
+#include <KOSyncStatusStore.h>
 #include <Logging.h>
 
 #include <optional>
