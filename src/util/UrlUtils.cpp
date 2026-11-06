@@ -1,0 +1,127 @@
+#include "UrlUtils.h"
+
+#include <strings.h>
+
+#include <cctype>
+#include <cstdio>
+#include <cstring>
+
+namespace UrlUtils {
+namespace {
+bool isHexDigit(const char c) { return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f'); }
+
+bool shouldEncode(const unsigned char c) {
+  if (c <= 0x20 || c >= 0x7f) return true;
+  switch (c) {
+    case '"':
+    case '<':
+    case '>':
+    case '\\':
+    case '^':
+    case '`':
+    case '{':
+    case '|':
+    case '}':
+      return true;
+    default:
+      return false;
+  }
+}
+}  // namespace
+
+std::string ensureProtocol(const std::string& url) {
+  if (url.find("://") == std::string::npos) {
+    return "http://" + url;
+  }
+  return url;
+}
+
+std::string extractHost(const std::string& url) {
+  const size_t protocolEnd = url.find("://");
+  if (protocolEnd == std::string::npos) {
+    // No protocol, find first slash
+    const size_t firstSlash = url.find('/');
+    return firstSlash == std::string::npos ? url : url.substr(0, firstSlash);
+  }
+  // Find the first slash after the protocol
+  const size_t hostStart = protocolEnd + 3;
+  const size_t pathStart = url.find('/', hostStart);
+  return pathStart == std::string::npos ? url : url.substr(0, pathStart);
+}
+
+std::string encodeUnsafeUrlChars(const std::string& url) {
+  std::string out;
+  out.reserve(url.size());
+  for (size_t i = 0; i < url.size(); ++i) {
+    const unsigned char c = static_cast<unsigned char>(url[i]);
+    if (c == '%' && i + 2 < url.size() && isHexDigit(url[i + 1]) && isHexDigit(url[i + 2])) {
+      out += url[i];
+      out += url[i + 1];
+      out += url[i + 2];
+      i += 2;
+    } else if (c == '%' || shouldEncode(c)) {
+      char encoded[4];
+      snprintf(encoded, sizeof(encoded), "%%%02X", c);
+      out += encoded;
+    } else {
+      out += static_cast<char>(c);
+    }
+  }
+  return out;
+}
+
+std::string buildUrl(const std::string& serverUrl, const std::string& path) {
+  // If path is already an absolute URL (has protocol), use it directly
+  if (path.find("://") != std::string::npos) {
+    return encodeUnsafeUrlChars(path);
+  }
+  const std::string urlWithProtocol = ensureProtocol(serverUrl);
+  if (path.empty()) {
+    return encodeUnsafeUrlChars(urlWithProtocol);
+  }
+  if (path[0] == '/') {
+    // Absolute path - use just the host
+    return encodeUnsafeUrlChars(extractHost(urlWithProtocol) + path);
+  }
+  // Relative path - strip query string from base before appending
+  std::string base = urlWithProtocol;
+  const size_t queryPos = base.find('?');
+  if (queryPos != std::string::npos) {
+    base.resize(queryPos);
+  }
+  if (base.back() == '/') {
+    return encodeUnsafeUrlChars(base + path);
+  }
+  return encodeUnsafeUrlChars(base + "/" + path);
+}
+
+bool resolveServerPath(std::string& path, const std::string& requestUrl) {
+  if (path.empty() || path[0] != '/' || (path.size() > 1 && path[1] == '/')) return false;
+  const size_t scheme = requestUrl.find("://");
+  if (scheme == std::string::npos) return false;
+  const size_t hostEnd = requestUrl.find_first_of("/?#", scheme + 3);
+  path.insert(0, requestUrl, 0, hostEnd == std::string::npos ? requestUrl.size() : hostEnd);
+  return true;
+}
+
+bool isForeignHost(const char* hostHeader) {
+  if (hostHeader == nullptr) return false;  // a String whose allocation failed
+  const size_t len = strcspn(hostHeader, ":");
+  if (len == 0 || hostHeader[0] == '[') return false;  // no host, or an IPv6 literal
+  constexpr char LOCAL_SUFFIX[] = ".local";
+  constexpr size_t SUFFIX_LEN = sizeof(LOCAL_SUFFIX) - 1;
+  if (len >= SUFFIX_LEN && strncasecmp(hostHeader + len - SUFFIX_LEN, LOCAL_SUFFIX, SUFFIX_LEN) == 0) return false;
+  bool hasDot = false;
+  bool allDigits = true;
+  for (size_t i = 0; i < len; i++) {
+    const char c = hostHeader[i];
+    if (c == '.') {
+      hasDot = true;
+    } else if (!isdigit(static_cast<unsigned char>(c))) {
+      allDigits = false;
+    }
+  }
+  return hasDot && !allDigits;
+}
+
+}  // namespace UrlUtils
