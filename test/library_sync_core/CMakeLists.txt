@@ -1,0 +1,3 @@
+add_executable(LibrarySyncCoreTest LibrarySyncCoreTest.cpp)
+target_link_libraries(LibrarySyncCoreTest PRIVATE crosspoint_test_common GTest::gtest_main)
+gtest_discover_tests(LibrarySyncCoreTest)

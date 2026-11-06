@@ -33,6 +33,7 @@ enum class SettingAction {
   HomeButton,
   About,
   TesseraeSync,
+  LibrarySync,
 };
 
 struct SettingInfo {

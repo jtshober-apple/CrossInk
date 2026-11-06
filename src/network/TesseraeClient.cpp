@@ -467,6 +467,7 @@ bool lastAttemptFailed = false;
 RTC_DATA_ATTR uint8_t failureChain = 0;
 RTC_DATA_ATTR uint8_t quickChain = 0;
 bool quickRecheck = false;
+bool keepWifi = false;
 bool deferredRefresh = false;
 // What the panel shows right now. Survives deep sleep so a timed wake whose fetched frame is identical (and whose
 // pill state is unchanged) can skip the e-ink redraw. OTHER after a stand-in/other screen or a cold boot.
@@ -481,6 +482,7 @@ void notifyStep(const char* text) {
 bool TesseraeClient::joinSavedWifi() { return connectSavedWifi(false); }
 void TesseraeClient::setPreferredJoinSsid(const std::string& ssid) { preferredJoinSsid = ssid; }
 void TesseraeClient::leaveWifi() { wifiOff(); }
+void TesseraeClient::keepWifiAfterRefresh(const bool keep) { keepWifi = keep; }
 
 void TesseraeClient::setScreenState(const ScreenState state) { screenStateValue = static_cast<uint8_t>(state); }
 TesseraeClient::ScreenState TesseraeClient::screenState() {
@@ -613,7 +615,9 @@ TesseraeClient::Error TesseraeClient::refreshBeforeSleep(const bool timedWake) {
   setFailureMark(lastAttemptFailed);
 
   notifyStep(tr(STR_ENTERING_SLEEP));
-  if (!alreadyConnected) wifiOff();
+  const bool keepRadio = timedWake && keepWifi && err == OK;
+  keepWifi = false;
+  if (!alreadyConnected && !keepRadio) wifiOff();
   return err;
 }
 

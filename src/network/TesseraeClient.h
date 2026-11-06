@@ -102,6 +102,10 @@ class TesseraeClient {
   /** Make the next refreshBeforeSleep() a no-op: a timed wake has just fetched and cached the frame. */
   static void markRefreshed();
 
+  /** Leave Wi-Fi on after a successful timed-wake refresh so a follow-up job can reuse it; the caller then turns it
+   * off. */
+  static void keepWifiAfterRefresh(bool keep);
+
   /** The timed-wake join tries this SSID first when it is in range (empty = no preference). */
   static void setPreferredJoinSsid(const std::string& ssid);
   // True while a timed wake redraws the dashboard (the sleep screen then says "Updating display").

@@ -24,6 +24,7 @@
 #include "KOReaderSettingsActivity.h"
 #include "KeyboardLayoutsActivity.h"
 #include "LanguageSelectActivity.h"
+#include "LibrarySyncActivity.h"
 #include "MappedInputManager.h"
 #include "OpdsServerListActivity.h"
 #include "OtaUpdateActivity.h"
@@ -138,6 +139,7 @@ void SettingsActivity::rebuildSettings() {
   addAction(SettingsSection::Network, StrId::STR_KOREADER_SYNC, SettingAction::KOReaderSync);
   addAction(SettingsSection::Network, StrId::STR_TESSERAE, SettingAction::TesseraeSync);
   addAction(SettingsSection::Network, StrId::STR_OPDS_SERVERS, SettingAction::OPDSBrowser);
+  addAction(SettingsSection::Network, StrId::STR_LIBRARY_SYNC, SettingAction::LibrarySync);
   addAction(SettingsSection::Network, StrId::STR_PLUGINS, SettingAction::Plugins);
 
   // OTA fetches this board's own release asset (see OtaUpdater); boards whose
@@ -313,6 +315,9 @@ void SettingsActivity::toggleSelectedSetting() {
         break;
       case SettingAction::TesseraeSync:
         startActivityForResult(std::make_unique<TesseraeActivity>(renderer, mappedInput), resultHandler);
+        break;
+      case SettingAction::LibrarySync:
+        startActivityForResult(std::make_unique<LibrarySyncActivity>(renderer, mappedInput), resultHandler);
         break;
       case SettingAction::OPDSBrowser:
         startActivityForResult(std::make_unique<OpdsServerListActivity>(renderer, mappedInput), resultHandler);

@@ -48,6 +48,7 @@
 #include "components/UITheme.h"
 #include "fontIds.h"
 #include "network/KoSyncQuiet.h"
+#include "network/LibrarySync.h"
 #include "network/TesseraeClient.h"
 #include "platform/UsbSerialJtagHandoff.h"
 #include "util/ButtonNavigator.h"
@@ -618,8 +619,13 @@ static void timedWakeRefreshAndResleep() {
   WIFI_STORE.loadFromFile();  // saved networks live on the SD card; nothing else has loaded them in this boot
   TesseraeClient::setTimedWake(true);
   TesseraeClient::setAbortCheck(timedWakePowerPressed);
+  // Keep Wi-Fi up after a good refresh when a library pass is due, instead of joining a second time.
+  const bool libraryPassDue = LibrarySync::backgroundDue();
+  TesseraeClient::keepWifiAfterRefresh(libraryPassDue);
+  TesseraeClient::setPreferredJoinSsid(LibrarySync::preferredJoinSsid());
   const auto err = TesseraeClient::refreshBeforeSleep(/*timedWake=*/true);
   TesseraeClient::setAbortCheck(nullptr);
+  const bool wifiKept = libraryPassDue && err == TesseraeClient::OK;
   if (err == TesseraeClient::ABORTED) {
     LOG_INF("BOOT", "Timed wake: Power pressed, booting normally");
     TesseraeClient::setTimedWake(false);
@@ -648,6 +654,11 @@ static void timedWakeRefreshAndResleep() {
     display.deepSleep();
   } else {
     LOG_INF("BOOT", "Timed wake: no redraw needed (%s), back to sleep", TesseraeClient::errorString(err));
+  }
+  // Library Sync's background pass: after the dashboard is on screen, on the Wi-Fi session the refresh kept up.
+  // Bounded by a small per-wake budget and it gives way to a Power press (then the reader boots instead of sleeping).
+  if (wifiKept && LibrarySync::runBackground(timedWakePowerPressed) == LibrarySync::Result::ABORTED) {
+    ESP.restart();
   }
   if (WiFi.getMode() != WIFI_MODE_NULL) {
     WiFi.disconnect(true);
