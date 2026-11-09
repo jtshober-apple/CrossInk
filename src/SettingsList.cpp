@@ -182,6 +182,18 @@ void forEachBaseSetting(SettingVisitor visit, void* context) {
     emit(SettingInfo::Toggle(StrId::STR_DBL_CLICK_PWR_LIGHT, &CrossPointSettings::doubleClickPwrLight,
                              "doubleClickPwrLight", StrId::STR_CAT_CONTROLS));
   emit(buildShortPowerButtonSetting());
+  {
+    const std::vector<StrId> chordActions = {StrId::STR_NONE_OPT,       StrId::STR_SLEEP,
+                                             StrId::STR_CHORD_HOME,     StrId::STR_LIBRARY,
+                                             StrId::STR_SETTINGS_TITLE, StrId::STR_TOGGLE_FRONTLIGHT,
+                                             StrId::STR_FORCE_REFRESH};
+    emit(SettingInfo::Enum(StrId::STR_CHORD_UP_DOWN, &CrossPointSettings::chordUpDown, chordActions, "chordUpDown",
+                           StrId::STR_CAT_CONTROLS));
+    emit(SettingInfo::Enum(StrId::STR_CHORD_LEFT_RIGHT, &CrossPointSettings::chordLeftRight, chordActions,
+                           "chordLeftRight", StrId::STR_CAT_CONTROLS));
+    emit(SettingInfo::Enum(StrId::STR_CHORD_BACK_CONFIRM, &CrossPointSettings::chordBackConfirm, chordActions,
+                           "chordBackConfirm", StrId::STR_CAT_CONTROLS));
+  }
   // Always persisted; getSettingsList() hides it when the IMU probe fails.
   emit(SettingInfo::Enum(StrId::STR_TILT_PAGE_TURN, &CrossPointSettings::tiltPageTurn,
                          {StrId::STR_STATE_OFF, StrId::STR_NORMAL, StrId::STR_INVERTED}, "tiltPageTurn",

@@ -58,6 +58,8 @@ class MappedInputManager {
   // One-shot threshold event while the button is down; consumes its release.
   bool wasLongPressed(Button button, unsigned long thresholdMs) const;
   bool consumeSuppressedRelease() const;
+  // Swallow the next release of a button (used after a chord shortcut fired so neither button also acts alone).
+  void suppressRelease(Button button) const { suppressNextRelease(button); }
   bool isPressed(Button button) const;
   bool hasTouch() const;
   bool wasScreenTapped(int& x, int& y) const;

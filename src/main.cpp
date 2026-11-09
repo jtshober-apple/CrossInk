@@ -53,6 +53,7 @@
 #include "network/TesseraeClient.h"
 #include "platform/UsbSerialJtagHandoff.h"
 #include "util/ButtonNavigator.h"
+#include "util/ChordShortcuts.h"
 #include "util/PluginEvents.h"
 #include "util/ScreenshotUtil.h"
 #include "util/SlideSwitch.h"
@@ -1062,6 +1063,61 @@ void loop() {
   if (wakePowerReleasePending && !gpio.isPressed(HalGPIO::BTN_POWER)) {
     wakePowerReleasePending = false;
     return;
+  }
+
+  // Chord shortcuts (Settings -> Controls): two front/side buttons pressed together run a global action.
+  {
+    using MIB = MappedInputManager::Button;
+    struct Chord {
+      uint8_t CrossPointSettings::* action;
+      MIB a;
+      MIB b;
+      ChordDetector detector;
+    };
+    static Chord chords[] = {{&CrossPointSettings::chordUpDown, MIB::Up, MIB::Down, {}},
+                             {&CrossPointSettings::chordLeftRight, MIB::Left, MIB::Right, {}},
+                             {&CrossPointSettings::chordBackConfirm, MIB::Back, MIB::Confirm, {}}};
+    if (!gpio.isPressed(HalGPIO::BTN_POWER)) {
+      for (auto& chord : chords) {
+        const auto action = static_cast<ChordAction>(SETTINGS.*(chord.action));
+        if (action == ChordAction::None || action >= ChordAction::Count) {
+          chord.detector.update(millis(), false, false);
+          continue;
+        }
+        if (!chord.detector.update(millis(), mappedInputManager.isPressed(chord.a),
+                                   mappedInputManager.isPressed(chord.b))) {
+          continue;
+        }
+        mappedInputManager.suppressRelease(chord.a);
+        mappedInputManager.suppressRelease(chord.b);
+        lastActivityTime = millis();
+        switch (action) {
+          case ChordAction::Sleep:
+            enterDeepSleep();
+            return;
+          case ChordAction::Home:
+            activityManager.goHome();
+            return;
+          case ChordAction::Library:
+            activityManager.goToLibrary();
+            return;
+          case ChordAction::Settings:
+            activityManager.goToSettings();
+            return;
+          case ChordAction::ToggleFrontlight:
+            toggleFrontlight();
+            break;
+          case ChordAction::RefreshScreen:
+            if (!activityManager.handleForcedRefresh()) {
+              RenderLock lock;
+              renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+            }
+            break;
+          default:
+            break;
+        }
+      }
+    }
   }
 
   static bool screenshotButtonsReleased = true;

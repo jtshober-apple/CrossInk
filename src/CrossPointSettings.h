@@ -439,6 +439,10 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t tessChargingLandscape = 1;
   // Which way the docked reader is turned for the landscape dashboard: 0 = clockwise, 1 = counter-clockwise.
   uint8_t tessLandscapeDir = 0;
+  // Chord shortcuts: two buttons pressed together (ChordAction index, 0 = none).
+  uint8_t chordUpDown = 0;
+  uint8_t chordLeftRight = 0;
+  uint8_t chordBackConfirm = 0;
   // Bluetooth page turner, saved under the keys lib/BlePageTurner reads and writes (BlePageTurnerJson.h).
   bleturner::Config ble;
   // Quick Resume: keep current content visible with moon icon instead of showing a static sleep screen.
