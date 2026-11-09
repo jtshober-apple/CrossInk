@@ -52,6 +52,17 @@ class HttpDownloader {
   static bool lastAnswerRedirected();
 
   /**
+   * Per-transfer deadlines (Library Sync). While armed, a transfer that has received no byte `firstByteMs` after it
+   * started (connect, TLS, request, headers and the first body byte all count), or none for `stallMs` once data
+   * flowed, is aborted: the call returns ABORTED and lastTimeoutKind() says why (1 = never started, 2 = stalled; 0 =
+   * not a timeout). Each socket operation then also uses `socketTimeoutMs` instead of the long default. Not
+   * thread-safe by design, like lastStatus(): one transfer runs at a time.
+   */
+  static void armWatchdog(uint32_t firstByteMs, uint32_t stallMs, uint32_t socketTimeoutMs);
+  static void disarmWatchdog();
+  static uint8_t lastTimeoutKind();
+
+  /**
    * Fetch text content from a URL with optional credentials. `headers` are
    * added to the request, as for downloadToFile().
    */

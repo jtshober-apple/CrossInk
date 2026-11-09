@@ -9,6 +9,7 @@
 #include <string>
 
 #include "WifiPowerSaveGuard.h"
+#include "util/LibrarySyncCore.h"
 
 extern "C" void wolfSSL_Arduino_Serial_Print(const char* const msg) { LOG_DBG("WOLFSSL", "%s", msg); }
 
@@ -24,8 +25,18 @@ constexpr int MAX_REDIRECTS = 5;
 // must not balloon the heap.
 constexpr size_t MAX_RESPONSE_BYTES = 4096;
 
+// Transfer deadlines (see HttpDownloader::armWatchdog).
+bool g_wdArmed = false;
+uint32_t g_wdFirstByteMs = 0;
+uint32_t g_wdStallMs = 0;
+int g_wdSocketTimeoutMs = HTTP_TIMEOUT_MS;
+uint32_t g_wdStartMs = 0;
+uint32_t g_wdLastByteMs = 0;
+bool g_wdGotByte = false;
+uint8_t g_wdKind = 0;
+
 void applyCommonClientSetup(freeink::SecureHttpClient& http) {
-  http.setTimeout(HTTP_TIMEOUT_MS);
+  http.setTimeout(g_wdArmed ? g_wdSocketTimeoutMs : HTTP_TIMEOUT_MS);
   http.setInsecure();
   // setUserAgent replaces SecureHttpClient's built-in UA; addHeader would
   // append a second User-Agent header, which strict servers reject (aiohttp
@@ -51,6 +62,17 @@ HttpDownloader::DownloadError runGetSecure(const std::string& url, const std::st
   freeink::FetchOptions options;
   options.redirectToHttp = downgradeRedirectsToHttp;
   bool answeredBySameOrigin = true;
+  g_wdStartMs = g_wdLastByteMs = millis();
+  g_wdGotByte = false;
+  g_wdKind = 0;
+  // Every body byte refreshes the stall clock; the abort check below is polled by the client while it waits.
+  freeink::FetchSink watched = sink;
+  const auto innerWrite = sink.write;
+  watched.write = [innerWrite](const uint8_t* data, size_t len) {
+    g_wdGotByte = true;
+    g_wdLastByteMs = millis();
+    return innerWrite ? innerWrite(data, len) : true;
+  };
   const freeink::FetchResult result = freeink::fetchResumable(
       url, options,
       [&](freeink::SecureHttpClient& http, const bool sameOrigin) {
@@ -65,7 +87,16 @@ HttpDownloader::DownloadError runGetSecure(const std::string& url, const std::st
         LOG_DBG("HTTP", "wolfSSL GET: %s (heap %u, max block %u)", url.c_str(), (unsigned)ESP.getFreeHeap(),
                 (unsigned)ESP.getMaxAllocHeap());
       },
-      sink, [cancelFlag] { return cancelFlag && *cancelFlag; });
+      watched,
+      [cancelFlag] {
+        if (cancelFlag && *cancelFlag) return true;
+        if (!g_wdArmed) return false;
+        const auto verdict =
+            LibrarySyncCore::watchdog(millis(), g_wdStartMs, g_wdLastByteMs, g_wdGotByte, g_wdFirstByteMs, g_wdStallMs);
+        if (verdict == LibrarySyncCore::Watch::OK) return false;
+        g_wdKind = verdict == LibrarySyncCore::Watch::NO_START ? 1 : 2;
+        return true;
+      });
   if (bytesOut) *bytesOut = result.bytes;
   // FetchResult::status is -1 when no response arrived (bad URL, DNS, connect, TLS).
   g_lastStatus = result.status < 0 ? 0 : result.status;
@@ -91,6 +122,17 @@ HttpDownloader::DownloadError runGetSecure(const std::string& url, const std::st
 }  // namespace
 
 int HttpDownloader::lastStatus() { return g_lastStatus; }
+
+void HttpDownloader::armWatchdog(const uint32_t firstByteMs, const uint32_t stallMs, const uint32_t socketTimeoutMs) {
+  g_wdFirstByteMs = firstByteMs;
+  g_wdStallMs = stallMs;
+  g_wdSocketTimeoutMs = static_cast<int>(socketTimeoutMs);
+  g_wdArmed = true;
+}
+
+void HttpDownloader::disarmWatchdog() { g_wdArmed = false; }
+
+uint8_t HttpDownloader::lastTimeoutKind() { return g_wdKind; }
 
 bool HttpDownloader::lastAnswerRedirected() { return g_lastRedirected; }
 
