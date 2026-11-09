@@ -9,11 +9,14 @@
 #endif
 
 #include <cstdio>
+#include <memory>
 
 #include "CrossPointSettings.h"
 #include "MappedInputManager.h"
 #include "OpdsServerStore.h"
 #include "activities/network/WifiSelectionActivity.h"
+#include "activities/settings/LibrarySyncLogActivity.h"
+#include "activities/util/ConfirmationActivity.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
 #include "network/WifiJoin.h"
@@ -29,6 +32,8 @@ enum Row : int {
   ROW_BATTERY,
   ROW_UPDATES,
   ROW_SERVER,
+  ROW_ERROR_LOG,
+  ROW_CLEAR_LOG,
   ROW_COUNT,
 };
 
@@ -251,6 +256,21 @@ void LibrarySyncActivity::activateRow() {
       if (count > 0) cfg.serverIndex = static_cast<uint8_t>((cfg.serverIndex + 1) % count);
       break;
     }
+    case ROW_ERROR_LOG:
+      startActivityForResult(std::make_unique<LibrarySyncLogActivity>(renderer, mappedInput),
+                             [this](const ActivityResult&) { requestUpdate(); });
+      return;
+    case ROW_CLEAR_LOG:
+      // Removes only our own error log (and its marker); never a book.
+      startActivityForResult(
+          std::make_unique<ConfirmationActivity>(
+              renderer, mappedInput, "Clear the error log?",
+              "This removes only the Library Sync error log. Your books are not touched.", "Cancel", "Clear"),
+          [this](const ActivityResult& result) {
+            if (!result.isCancelled) LibrarySync::clearErrorLog();
+            requestUpdate();
+          });
+      return;
     default:
       break;
   }
@@ -362,6 +382,18 @@ void LibrarySyncActivity::renderMenu() const {
   std::string wifi = "Any saved network";
   if (cfg.homeOnly) wifi = cfg.homeSsid[0] ? std::string("Only ") + cfg.homeSsid : "Home network (set by next sync)";
 
+  const size_t unreadProblems = LibrarySync::errorsUnread();
+  const size_t loggedProblems = LibrarySyncCore::countLines(LibrarySync::readErrorLog());
+  char problems[48];
+  if (loggedProblems == 0) {
+    std::snprintf(problems, sizeof(problems), "No problem books");
+  } else if (unreadProblems > 0) {
+    std::snprintf(problems, sizeof(problems), "%u new (%u in the log)", static_cast<unsigned>(unreadProblems),
+                  static_cast<unsigned>(loggedProblems));
+  } else {
+    std::snprintf(problems, sizeof(problems), "%u in the log, none new", static_cast<unsigned>(loggedProblems));
+  }
+
   struct Line {
     const char* label;
     std::string value;
@@ -373,6 +405,8 @@ void LibrarySyncActivity::renderMenu() const {
       {"Skip below battery", battery},
       {"Replace changed books", cfg.replaceUpdated ? "On" : "Off"},
       {"Server", server.found ? server.name : "None saved: add one in OPDS Servers"},
+      {"Error log", problems},
+      {"Clear error log", "Removes only the log, never a book"},
   };
   for (int i = 0; i < ROW_COUNT; ++i) {
     const bool sel = i == selected_;
@@ -453,6 +487,12 @@ void LibrarySyncActivity::renderDone() const {
     UITheme::drawCenteredWrappedText(renderer, Rect{area.x, y, area.width, renderer.getLineHeight(SMALL_FONT_ID) * 2},
                                      SMALL_FONT_ID, line, 2, true, EpdFontFamily::REGULAR,
                                      UITheme::TextVerticalAlignment::TOP);
+    y += renderer.getLineHeight(SMALL_FONT_ID) * 2 + 6;
+    if (progress_.waiting > 0 || progress_.failed > 0) {
+      std::snprintf(line, sizeof(line), "%u skipped or failed: see Error log",
+                    static_cast<unsigned>(progress_.waiting + progress_.failed));
+      renderer.drawCenteredText(SMALL_FONT_ID, y, line, true, EpdFontFamily::BOLD);
+    }
   }
 
   if (mappedInput.hasTouch()) {

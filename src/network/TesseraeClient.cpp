@@ -27,6 +27,7 @@
 #include "RecentBooksStore.h"
 #include "WifiCredentialStore.h"
 #include "network/KoSyncQuiet.h"
+#include "network/LibrarySync.h"
 #include "network/WifiJoin.h"
 #include "network/WifiUtils.h"
 #include "util/BookProgress.h"
@@ -417,6 +418,12 @@ TesseraeClient::Error TesseraeClient::sendHeartbeat(uint16_t* nextPollSeconds) {
   bodyDoc["battery_pct"] = powerManager.getBatteryPercentage();
   // USB power present: the dashboard server draws its landscape layout for a charging (docked) reader.
   bodyDoc["charging"] = gpio.isUsbConnected() ? 1 : 0;
+  // Library Sync problem books the user has not looked at yet, so the dashboard server can see them too.
+  {
+    const size_t unread = LibrarySync::errorsUnread();
+    bodyDoc["lib_err_unread"] = static_cast<unsigned>(unread);
+    if (unread > 0) bodyDoc["lib_err_last"] = LibrarySync::errorsLastSummary();
+  }
   // The open book, so the dashboard footer follows what is being read rather than guessing from server positions.
   {
     const std::string& openPath = APP_STATE.openEpubPath;

@@ -44,6 +44,7 @@
 #include "WifiCredentialStore.h"
 #include "activities/Activity.h"
 #include "activities/ActivityManager.h"
+#include "activities/settings/LibrarySyncNoticeActivity.h"
 #include "activities/settings/SdFirmwareUpdateActivity.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
@@ -1193,6 +1194,16 @@ void loop() {
   // page turn instead.
   if (gpio.wasUsbStateChanged() && !activityManager.isReaderActivity()) {
     activityManager.requestUpdate();
+  }
+
+  // Library Sync problem books the user has not seen: say so once per start-up, on top of Home.
+  static bool libraryNoticeChecked = false;
+  if (!libraryNoticeChecked && activityManager.isForegroundHomeShown()) {
+    libraryNoticeChecked = true;
+    const size_t unread = LibrarySync::errorsUnread();
+    if (unread > 0) {
+      activityManager.pushActivity(std::make_unique<LibrarySyncNoticeActivity>(renderer, mappedInputManager, unread));
+    }
   }
 
   const unsigned long activityStartTime = millis();

@@ -2,6 +2,7 @@
 #include "network/LibrarySync.h"
 
 #include <Arduino.h>
+#include <HalClock.h>
 #include <HalGPIO.h>
 #include <HalPowerManager.h>
 #include <HalStorage.h>
@@ -31,6 +32,7 @@
 #include "OpdsServerStore.h"
 #include "network/HttpDownloader.h"
 #include "util/BookCacheUtils.h"
+#include "util/LibrarySyncCore.h"
 #include "util/RtcMinutes.h"
 #include "util/StringUtils.h"
 #include "util/UrlUtils.h"
@@ -50,6 +52,12 @@ constexpr size_t MAX_LOCAL_BOOKS = 3000;
 constexpr size_t MAX_QUEUE = 40;
 constexpr size_t MAX_FEEDS = 40;
 
+constexpr const char* FAIL_PATH = "/.crosspoint/library_sync_fail.tsv";
+constexpr const char* ERROR_LOG_PATH = "/.crosspoint/library_sync_errors.log";
+constexpr const char* ERROR_SEEN_PATH = "/.crosspoint/library_sync_errors.seen";
+constexpr uint32_t SOCKET_TIMEOUT_MS = 25000;    // each socket operation while a book downloads
+constexpr uint8_t MAX_CONSECUTIVE_FAILURES = 3;  // a pass that keeps failing gives up instead of burning battery
+
 Config cfg;
 bool cfgLoaded = false;
 
@@ -57,6 +65,8 @@ bool cfgLoaded = false;
 std::vector<uint32_t> localKeys;
 // Books this device already fetched or adopted.
 std::vector<StateEntry> state;
+// Books that failed (with back-off) or were too big for a background pass.
+std::vector<FailEntry> fails;
 
 struct Pending {
   std::string url;       // resolved against the server URL when fetched
@@ -147,6 +157,94 @@ void rememberBook(const uint32_t idHash, const uint32_t size, const uint32_t sha
   state.push_back(StateEntry{idHash, size, sha1Prefix});
 }
 
+// ---- problem books: back-off records and the error log ---------------------------------------------------------
+
+int64_t nowMinutes() {
+  int64_t now = -1;
+  int64_t tmp = 0;
+  if (rtcMinutesSinceEpoch(tmp)) now = tmp;
+  return now;
+}
+
+void loadFails() {
+  fails.clear();
+  forEachLine(readWhole(FAIL_PATH), [](std::string_view line) {
+    FailEntry e;
+    if (parseFailLine(line, e)) fails.push_back(e);
+  });
+}
+
+void saveFails() {
+  std::string out;
+  for (const auto& e : fails) out += formatFailLine(e);
+  if (out.empty()) {
+    Storage.remove(FAIL_PATH);  // our own bookkeeping file
+    return;
+  }
+  writeAtomic(FAIL_PATH, out);
+}
+
+FailEntry* findFail(const uint32_t idHash) {
+  for (auto& e : fails) {
+    if (e.idHash == idHash) return &e;
+  }
+  return nullptr;
+}
+
+FailEntry& ensureFail(const uint32_t idHash) {
+  if (auto* e = findFail(idHash)) return *e;
+  FailEntry e;
+  e.idHash = idHash;
+  fails.push_back(e);
+  return fails.back();
+}
+
+bool eraseFail(const uint32_t idHash) {
+  for (size_t i = 0; i < fails.size(); ++i) {
+    if (fails[i].idHash == idHash) {
+      fails.erase(fails.begin() + static_cast<std::ptrdiff_t>(i));
+      return true;
+    }
+  }
+  return false;
+}
+
+std::string logStamp() {
+  struct tm t{};
+  if (!halClock.isAvailable() || !halClock.localTime(t) || t.tm_year + 1900 < 2024) return "(no clock)";
+  char buf[24];
+  std::snprintf(buf, sizeof(buf), "%04d-%02d-%02d %02d:%02d", t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour,
+                t.tm_min);
+  return buf;
+}
+
+size_t readSeenLines() { return static_cast<size_t>(std::strtoul(readWhole(ERROR_SEEN_PATH).c_str(), nullptr, 10)); }
+
+void writeSeenLines(const size_t lines) { writeAtomic(ERROR_SEEN_PATH, std::to_string(lines)); }
+
+// One line for the user's error log. Unread lines are never dropped before read ones (see rotateLog).
+void logProblem(const std::string& filename, const FailReason reason, const unsigned attempts, const uint32_t size) {
+  Storage.mkdir("/.crosspoint");
+  std::string log = readWhole(ERROR_LOG_PATH);
+  size_t seen = readSeenLines();
+  log += formatErrorLine(logStamp(), reason, filename, attempts, size);
+  rotateLog(log, seen);
+  writeAtomic(ERROR_LOG_PATH, log);
+  writeSeenLines(seen);
+  LOG_ERR(TAG, "problem book: %s (%s)", filename.c_str(), failReasonText(reason));
+}
+
+// A book too big for a background pass is left for 'Sync library now'; it is noted once (per size), not every wake.
+void noteTooBig(const uint32_t idHash, const std::string& filename, const uint32_t size) {
+  FailEntry* existing = findFail(idHash);
+  if (existing && existing->reason == FailReason::TOO_BIG && existing->size == size) return;
+  FailEntry& e = ensureFail(idHash);
+  e.reason = FailReason::TOO_BIG;
+  e.size = size;
+  saveFails();
+  logProblem(filename, FailReason::TOO_BIG, e.count, size);
+}
+
 // ---- the card ---------------------------------------------------------------------------------------------------
 
 void scanFolder(const std::string& path, const int depth) {
@@ -195,6 +293,8 @@ struct Catalog {
   uint16_t total = 0;
   uint16_t synced = 0;
   uint16_t missing = 0;
+  uint16_t waiting = 0;  // in back-off after earlier failures: not tried this run
+  uint16_t tooBig = 0;   // would not finish in a background pass: left for 'Sync library now'
   bool viaManifest = false;
 };
 
@@ -232,7 +332,7 @@ class LineSink {
 // The only code that touches HttpDownloader and the library index. Porting Library Sync to another base firmware
 // means adapting just these few functions (and, if there is no OpdsParser, building with LIBRARY_SYNC_NO_CRAWL).
 
-enum class Net : uint8_t { OK, ABORTED, FAILED, NO_SPACE };
+enum class Net : uint8_t { OK, ABORTED, FAILED, NO_SPACE, NO_START, STALLED, NOT_EPUB, NO_MEMORY, UNAUTHORIZED };
 using Cancel = std::function<bool()>;
 
 // GET `url`, streaming the body to onData (no buffering). `cancel` is polled while the body arrives.
@@ -264,8 +364,17 @@ bool validEpub(const std::string& path);
 Net netDownload(const OpdsServer& server, const std::string& origin, const std::string& url, const std::string& dest,
                 const Cancel& cancel, const std::function<void(size_t, size_t)>& progress) {
   (void)origin;
+#ifndef SIMULATOR
+  // A secure connection needs a good block of free memory; without it the download would fail (or crash) mid-way.
+  if (url.rfind("https://", 0) == 0 && (ESP.getFreeHeap() < HttpDownloader::MIN_TLS_FREE_HEAP ||
+                                        ESP.getMaxAllocHeap() < HttpDownloader::MIN_TLS_MAX_ALLOC)) {
+    return Net::NO_MEMORY;
+  }
+#endif
   const std::string tmp = dest + ".dl";
   bool cancelFlag = false;
+  // A book that never starts (25 s) or goes quiet (30 s) is given up on, so one bad file cannot hold up the rest.
+  HttpDownloader::armWatchdog(FIRST_BYTE_MS, STALL_MS, SOCKET_TIMEOUT_MS);
   const auto result = HttpDownloader::downloadToFile(
       url, tmp,
       [&](size_t done, size_t total) {
@@ -273,11 +382,16 @@ Net netDownload(const OpdsServer& server, const std::string& origin, const std::
         if (progress) progress(done, total);
       },
       &cancelFlag, server.username, server.password);
-  if (result == HttpDownloader::ABORTED) return Net::ABORTED;
+  HttpDownloader::disarmWatchdog();
+  if (result == HttpDownloader::ABORTED) {
+    const uint8_t kind = HttpDownloader::lastTimeoutKind();
+    return kind == 1 ? Net::NO_START : kind == 2 ? Net::STALLED : Net::ABORTED;
+  }
+  if (result == HttpDownloader::UNAUTHORIZED) return Net::UNAUTHORIZED;
   if (result != HttpDownloader::OK) return result == HttpDownloader::FILE_ERROR ? Net::NO_SPACE : Net::FAILED;
   if (!validEpub(tmp)) {
-    Storage.remove(tmp.c_str());
-    return Net::FAILED;
+    Storage.remove(tmp.c_str());  // our own temp file only
+    return Net::NOT_EPUB;
   }
   if (Storage.exists(dest.c_str())) {
     const std::string old = dest + ".old";
@@ -297,7 +411,29 @@ Net netDownload(const OpdsServer& server, const std::string& origin, const std::
 void libraryChanged() { library::markLibraryIndexDirty(); }           // new books: the Library rescans next time
 void bookReplaced(const std::string& path) { clearBookCache(path); }  // layout caches belong to the old file
 
+FailReason reasonFor(const Net net) {
+  switch (net) {
+    case Net::NO_START:
+      return FailReason::NO_START;
+    case Net::STALLED:
+      return FailReason::STALLED;
+    case Net::NOT_EPUB:
+      return FailReason::NOT_EPUB;
+    case Net::NO_SPACE:
+      return FailReason::WRITE_ERROR;
+    case Net::NO_MEMORY:
+      return FailReason::NO_MEMORY;
+    case Net::UNAUTHORIZED:
+      return FailReason::UNAUTHORIZED;
+    default:
+      return FailReason::HTTP_ERROR;
+  }
+}
+
 struct Pass {
+  bool manual = false;
+  int64_t nowMin = -1;    // RTC minutes, or -1 without a clock
+  uint32_t budgetMs = 0;  // the whole time budget of this run
   const OpdsServer* server = nullptr;
   std::string origin;
   bool replaceUpdated = false;
@@ -323,6 +459,18 @@ void consider(Pass& pass, const ManifestLine& line) {
       break;
     case Decision::DOWNLOAD_NEW:
     case Decision::DOWNLOAD_UPDATE:
+      // A book that keeps failing waits out its back-off, and one that cannot finish inside a background pass waits
+      // for 'Sync library now': neither takes a place in the queue, nor counts as missing (so it never keeps the
+      // device waking up for it).
+      if (!shouldAttempt(findFail(idHash), pass.nowMin, pass.manual)) {
+        ++pass.catalog.waiting;
+        break;
+      }
+      if (!pass.manual && !fitsRemainingTime(line.size, pass.budgetMs)) {
+        noteTooBig(idHash, line.filename, line.size);
+        ++pass.catalog.tooBig;
+        break;
+      }
       ++pass.catalog.missing;
       if (pass.queue.size() < pass.queueLimit) {
         Pending p;
@@ -501,6 +649,29 @@ const char* resultString(const Result result) {
   return "";
 }
 
+// ---- error log (public) -----------------------------------------------------------------------------------------
+
+size_t errorsUnread() {
+  if (!Storage.exists(ERROR_LOG_PATH)) return 0;
+  return unreadCount(readWhole(ERROR_LOG_PATH), readSeenLines());
+}
+
+std::string errorsLastSummary() { return lastErrorSummary(readWhole(ERROR_LOG_PATH)); }
+
+std::string readErrorLog() { return readWhole(ERROR_LOG_PATH); }
+
+void markErrorsRead() {
+  if (!Storage.exists(ERROR_LOG_PATH)) return;
+  writeSeenLines(countLines(readWhole(ERROR_LOG_PATH)));
+}
+
+bool clearErrorLog() {
+  const bool existed = Storage.exists(ERROR_LOG_PATH);
+  if (existed) Storage.remove(ERROR_LOG_PATH);  // our own log and its marker, nothing else
+  if (Storage.exists(ERROR_SEEN_PATH)) Storage.remove(ERROR_SEEN_PATH);
+  return existed;
+}
+
 ServerInfo selectedServer() {
   ServerInfo info;
   const OpdsServer* server = OPDS_STORE.getServer(config().serverIndex);
@@ -527,7 +698,9 @@ Result run(const bool manual, const AbortFn& abortFn, const ProgressFn& progress
   auto outOfTime = [&] { return millis() - startMs >= budget.maxMs; };
 
   loadState();
+  loadFails();
   scanCard();
+  const int64_t nowMin = nowMinutes();
   const std::string folder = downloadFolder();
   if (!folder.empty() && !Storage.exists(folder.c_str()) && !Storage.mkdir(folder.c_str())) {
     LOG_ERR(TAG, "cannot create %s", folder.c_str());
@@ -538,12 +711,16 @@ Result run(const bool manual, const AbortFn& abortFn, const ProgressFn& progress
   out = Progress();
   uint16_t fetchedTotal = 0;
   uint16_t deferred = 0;  // updates held back because the book is open: not a reason to keep waking
+  uint8_t consecutiveFailures = 0;
   Result result = Result::OK;
   bool changedCard = false;
   bool firstPass = true;
 
   while (true) {
     Pass pass;
+    pass.manual = manual;
+    pass.nowMin = nowMin;
+    pass.budgetMs = budget.maxMs;
     pass.server = server;
     pass.origin = origin;
     pass.replaceUpdated = c.replaceUpdated;
@@ -572,6 +749,7 @@ Result run(const bool manual, const AbortFn& abortFn, const ProgressFn& progress
     out.total = pass.catalog.total;
     out.synced = pass.catalog.synced;
     out.missing = pass.catalog.missing;
+    out.waiting = static_cast<uint16_t>(pass.catalog.waiting + pass.catalog.tooBig);
     if (progress) progress(out);
     saveState();  // adoptions found while reading the catalog
     if (pass.queue.empty()) {
@@ -618,6 +796,16 @@ Result run(const bool manual, const AbortFn& abortFn, const ProgressFn& progress
         continue;
       }
 
+      if (!manual) {
+        // Not enough of this pass is left for a big book: starting it would only be cut off. Leave it for a pass
+        // with time (a later wake, the charger, or 'Sync library now').
+        const uint32_t used = millis() - startMs;
+        if (!fitsRemainingTime(book.size, used >= budget.maxMs ? 0 : budget.maxMs - used)) {
+          ++deferred;
+          continue;
+        }
+      }
+
       const std::string url = UrlUtils::buildUrl(server->url, book.url);
       const Net download = netDownload(
           *server, origin, url, dest, [&] { return abort() || outOfTime(); },
@@ -628,6 +816,8 @@ Result run(const bool manual, const AbortFn& abortFn, const ProgressFn& progress
           });
 
       if (download == Net::OK) {
+        consecutiveFailures = 0;
+        if (eraseFail(book.idHash)) saveFails();
         rememberBook(book.idHash, book.size, book.sha1Prefix);
         saveState();
         if (book.update) bookReplaced(dest);
@@ -642,10 +832,29 @@ Result run(const bool manual, const AbortFn& abortFn, const ProgressFn& progress
         stop = true;
       } else {
         ++out.failed;
-        LOG_ERR(TAG, "failed %s (%d)", book.filename.c_str(), static_cast<int>(download));
-        if (download == Net::NO_SPACE) {
+        ++consecutiveFailures;
+        const FailReason reason = reasonFor(download);
+        if (download == Net::NO_MEMORY) {
+          // Not the book's fault and not worth a strike against it: note it and stop, the next pass has more memory.
+          logProblem(book.filename, reason, 0, book.size);
           result = Result::PARTIAL;
           stop = true;
+        } else {
+          FailEntry& entry = ensureFail(book.idHash);
+          recordFailure(entry, reason, nowMin, book.size);
+          const uint8_t attempts = entry.count;
+          saveFails();
+          logProblem(book.filename, reason, attempts, book.size);
+          LOG_ERR(TAG, "failed %s (%s, attempt %u)", book.filename.c_str(), failReasonText(reason),
+                  static_cast<unsigned>(attempts));
+          if (download == Net::NO_SPACE || download == Net::UNAUTHORIZED) {
+            result = download == Net::UNAUTHORIZED ? Result::NETWORK : Result::PARTIAL;
+            stop = true;
+          } else if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+            // Several in a row: the link or the server is the problem, not these books. Try again next pass.
+            result = Result::PARTIAL;
+            stop = true;
+          }
         }
       }
     }
