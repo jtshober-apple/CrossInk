@@ -8,6 +8,7 @@
 // plus an optional first line "#manifest v1 <count> <generated-epoch>". `path` is a percent-encoded URL path
 // relative to the server URL; `filename` is the on-card name (".epub" included). `sha1` may be empty.
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -252,6 +253,206 @@ inline Budget budgetFor(const bool manual, const bool charging) {
   if (manual) return Budget{20u * 60u * 1000u, 500};
   if (charging) return Budget{8u * 60u * 1000u, 40};
   return Budget{75u * 1000u, 2};
+}
+
+// ---- problem books: deadlines, quarantine, error log -------------------------------------------------------------
+
+// Why a book could not be fetched. Stored as a number in the fail file; the text is what the error log shows.
+enum class FailReason : uint8_t {
+  NONE = 0,
+  NO_START = 1,      // connect + headers + first byte did not arrive in time
+  STALLED = 2,       // the download started and then went quiet
+  HTTP_ERROR = 3,    // the server answered with an error (or cut the body short)
+  NOT_EPUB = 4,      // arrived, but is not a readable epub (damaged file)
+  WRITE_ERROR = 5,   // the SD card could not take it (full, or a write failed)
+  NO_MEMORY = 6,     // not enough free memory for a secure connection
+  TOO_BIG = 7,       // would not finish inside a background pass: left for 'Sync library now'
+  UNAUTHORIZED = 8,  // the server refused the saved user name / password
+};
+
+inline const char* failReasonText(const FailReason r) {
+  switch (r) {
+    case FailReason::NO_START:
+      return "no data within 25 s";
+    case FailReason::STALLED:
+      return "download stalled (no data for 30 s)";
+    case FailReason::HTTP_ERROR:
+      return "server error or cut-off download";
+    case FailReason::NOT_EPUB:
+      return "not a readable epub (damaged on the server?)";
+    case FailReason::WRITE_ERROR:
+      return "SD card write failed or card full";
+    case FailReason::NO_MEMORY:
+      return "not enough free memory";
+    case FailReason::TOO_BIG:
+      return "too big for a background pass, use Sync library now";
+    case FailReason::UNAUTHORIZED:
+      return "server refused the password";
+    case FailReason::NONE:
+      break;
+  }
+  return "unknown problem";
+}
+
+// Per-book deadlines: no byte at all inside FIRST_BYTE_MS of starting (connect, TLS, request, headers and the first
+// body byte count), or silence for STALL_MS once bytes have flowed. Wrap-safe on millis().
+constexpr uint32_t FIRST_BYTE_MS = 25000;
+constexpr uint32_t STALL_MS = 30000;
+
+enum class Watch : uint8_t { OK, NO_START, STALLED };
+
+inline Watch watchdog(const uint32_t nowMs, const uint32_t startMs, const uint32_t lastByteMs, const bool gotByte,
+                      const uint32_t firstByteLimit = FIRST_BYTE_MS, const uint32_t stallLimit = STALL_MS) {
+  if (!gotByte) return (nowMs - startMs) >= firstByteLimit ? Watch::NO_START : Watch::OK;
+  return (nowMs - lastByteMs) >= stallLimit ? Watch::STALLED : Watch::OK;
+}
+
+// One line per book that has failed (or was too big): `idHash(hex) \t failures \t nextRetryMin \t reason \t size`.
+struct FailEntry {
+  uint32_t idHash = 0;
+  uint8_t count = 0;         // consecutive failures (TOO_BIG does not count)
+  int64_t nextRetryMin = 0;  // RTC minutes; 0 = no wait recorded
+  FailReason reason = FailReason::NONE;
+  uint32_t size = 0;
+};
+
+constexpr uint8_t QUARANTINE_AFTER = 3;
+
+// Back-off before a failed book is tried again: 30 min, 2 h, then 24 h, then 7 days.
+inline int64_t retryDelayMinutes(const uint8_t failures) {
+  if (failures <= 1) return 30;
+  if (failures == 2) return 2 * 60;
+  if (failures == 3) return 24 * 60;
+  return 7 * 24 * 60;
+}
+
+inline bool isQuarantined(const FailEntry& e) { return e.count >= QUARANTINE_AFTER; }
+
+// May this book be tried in this run? A manual 'Sync library now' tries even quarantined books once (the caller
+// attempts each book at most once per run). A background pass waits out the back-off (no usable clock: only books
+// that have not been quarantined).
+inline bool shouldAttempt(const FailEntry* e, const int64_t nowMin, const bool manual) {
+  if (!e || e->count == 0) return true;
+  if (manual) return true;
+  if (nowMin < 0) return !isQuarantined(*e);
+  return nowMin >= e->nextRetryMin;
+}
+
+inline void recordFailure(FailEntry& e, const FailReason reason, const int64_t nowMin, const uint32_t size) {
+  if (e.count < 250) ++e.count;
+  e.reason = reason;
+  e.size = size;
+  e.nextRetryMin = nowMin < 0 ? 0 : nowMin + retryDelayMinutes(e.count);
+}
+
+inline bool parseFailLine(const std::string_view line, FailEntry& out) {
+  std::string_view f[5];
+  if (splitTabs(line, f, 5) < 5) return false;
+  char* end = nullptr;
+  const std::string idText(f[0]);
+  out.idHash = static_cast<uint32_t>(std::strtoul(idText.c_str(), &end, 16));
+  if (end == idText.c_str() || out.idHash == 0) return false;
+  out.count = static_cast<uint8_t>(std::min<uint64_t>(parseU64(f[1]), 250));
+  out.nextRetryMin = static_cast<int64_t>(parseU64(f[2]));
+  const uint64_t reason = parseU64(f[3]);
+  out.reason =
+      reason <= static_cast<uint64_t>(FailReason::UNAUTHORIZED) ? static_cast<FailReason>(reason) : FailReason::NONE;
+  out.size = static_cast<uint32_t>(parseU64(f[4]));
+  return true;
+}
+
+inline std::string formatFailLine(const FailEntry& e) {
+  char buf[96];
+  std::snprintf(buf, sizeof(buf), "%08x\t%u\t%lld\t%u\t%u\n", static_cast<unsigned>(e.idHash),
+                static_cast<unsigned>(e.count), static_cast<long long>(e.nextRetryMin), static_cast<unsigned>(e.reason),
+                static_cast<unsigned>(e.size));
+  return buf;
+}
+
+// Could this book finish inside what is left of a background pass? Assumes a slow but realistic link (the X4 over
+// Wi-Fi to a remote server). Manual runs never ask: they get the long budget and may take whatever they need.
+constexpr uint32_t ASSUMED_BYTES_PER_SEC = 150 * 1000;
+
+inline bool fitsRemainingTime(const uint32_t sizeBytes, const uint32_t remainingMs,
+                              const uint32_t bytesPerSec = ASSUMED_BYTES_PER_SEC) {
+  if (sizeBytes == 0 || bytesPerSec == 0) return true;
+  const uint64_t needMs = static_cast<uint64_t>(sizeBytes) * 1000u / bytesPerSec;
+  return needMs <= remainingMs;
+}
+
+// ---- error log (/.crosspoint/library_sync_errors.log): one line per event, plus how many lines have been seen ----
+
+constexpr size_t ERROR_LOG_MAX_LINES = 120;
+
+inline std::string cleanField(const std::string_view in, const size_t maxLen = 120) {
+  std::string out;
+  for (const char c : in) {
+    if (out.size() >= maxLen) break;
+    out += (c == '\t' || c == '\n' || c == '\r') ? ' ' : c;
+  }
+  return out;
+}
+
+// "2026-11-09 08:14\tno data within 25 s\tHidden Pictures.epub\t3\t118501344"
+inline std::string formatErrorLine(const std::string_view stamp, const FailReason reason, const std::string_view name,
+                                   const unsigned attempts, const uint32_t size) {
+  std::string line = cleanField(stamp, 20);
+  line += '\t';
+  line += failReasonText(reason);
+  line += '\t';
+  line += cleanField(name);
+  line += '\t';
+  line += std::to_string(attempts);
+  line += '\t';
+  line += std::to_string(size);
+  line += '\n';
+  return line;
+}
+
+inline size_t countLines(const std::string& log) {
+  size_t n = 0;
+  for (const char c : log) n += c == '\n';
+  return n;
+}
+
+inline size_t unreadCount(const std::string& log, const size_t seenLines) {
+  const size_t lines = countLines(log);
+  return lines > seenLines ? lines - seenLines : 0;
+}
+
+// Keep at most `maxLines`, dropping the oldest first (read lines before any unread one, since they come first).
+// `seenLines` follows the lines that are dropped.
+inline void rotateLog(std::string& log, size_t& seenLines, const size_t maxLines = ERROR_LOG_MAX_LINES) {
+  size_t lines = countLines(log);
+  while (lines > maxLines) {
+    const size_t nl = log.find('\n');
+    if (nl == std::string::npos) break;
+    log.erase(0, nl + 1);
+    --lines;
+    if (seenLines > 0) --seenLines;
+  }
+  if (seenLines > lines) seenLines = lines;
+}
+
+// Short text for the heartbeat: "<book> - <reason>" of the newest line, cut to `maxLen` bytes on a UTF-8 boundary.
+inline std::string lastErrorSummary(const std::string& log, const size_t maxLen = 60) {
+  if (log.empty()) return {};
+  size_t end = log.size();
+  while (end > 0 && (log[end - 1] == '\n' || log[end - 1] == '\r')) --end;
+  const size_t start = log.rfind('\n', end ? end - 1 : 0);
+  const std::string_view line(log.data() + (start == std::string::npos ? 0 : start + 1),
+                              end - (start == std::string::npos ? 0 : start + 1));
+  std::string_view f[5];
+  if (splitTabs(line, f, 5) < 3) return {};
+  std::string out(f[2]);
+  out += " - ";
+  out += f[1];
+  if (out.size() > maxLen) {
+    size_t cut = maxLen;
+    while (cut > 0 && (static_cast<unsigned char>(out[cut]) & 0xC0) == 0x80) --cut;
+    out.resize(cut);
+  }
+  return out;
 }
 
 }  // namespace LibrarySyncCore

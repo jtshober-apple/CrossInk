@@ -31,7 +31,7 @@ class HalPowerManager {
 #else
   static constexpr int LOW_POWER_FREQ = 10;  // MHz
 #endif
-  static constexpr unsigned long IDLE_POWER_SAVING_MS = 3000;  // ms
+  static constexpr unsigned long IDLE_POWER_SAVING_MS = 15000;  // ms (3 s made the first key after a short pause feel slow)
   static constexpr unsigned long BATTERY_POLL_MS = 1500;       // ms
 
   void begin();
