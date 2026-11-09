@@ -205,6 +205,10 @@ inline std::string formatStateLine(const StateEntry& e) {
 inline Decision decide(const ManifestLine& line, const StateEntry* tracked, const bool presentOnCard,
                        const bool replaceUpdated) {
   if (tracked) {
+    // A book this device fetched earlier and that is no longer on the card (removed by hand) comes back on the next
+    // pass: the sync keeps the card a mirror of the server, so a book you do not want must be removed from the server
+    // library, not just from the card.
+    if (!presentOnCard) return Decision::DOWNLOAD_NEW;
     if (replaceUpdated) {
       const uint32_t serverPrefix = sha1Prefix32(line.sha1);
       // Only a recorded hash AND a published hash that differ count as a real update; sizes alone are never
@@ -213,7 +217,7 @@ inline Decision decide(const ManifestLine& line, const StateEntry* tracked, cons
         return Decision::DOWNLOAD_UPDATE;
       }
     }
-    return Decision::UP_TO_DATE;  // includes a book the user deleted from the card: it is not fetched again
+    return Decision::UP_TO_DATE;
   }
   return presentOnCard ? Decision::ADOPT : Decision::DOWNLOAD_NEW;
 }

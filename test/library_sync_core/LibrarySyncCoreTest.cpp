@@ -40,7 +40,10 @@ TEST(LibrarySyncCore, DecisionTable) {
   const StateEntry noHash{1, 10, 0};
   EXPECT_EQ(decide(line, nullptr, false, false), Decision::DOWNLOAD_NEW);
   EXPECT_EQ(decide(line, nullptr, true, false), Decision::ADOPT);
-  EXPECT_EQ(decide(line, &same, false, true), Decision::UP_TO_DATE);
+  EXPECT_EQ(decide(line, &same, true, true), Decision::UP_TO_DATE);
+  EXPECT_EQ(decide(line, &same, false, true),
+            Decision::DOWNLOAD_NEW);  // removed by hand: fetched again on a later pass
+  EXPECT_EQ(decide(line, &older, false, false), Decision::DOWNLOAD_NEW);
   EXPECT_EQ(decide(line, &older, true, false), Decision::UP_TO_DATE);  // updates are opt-in
   EXPECT_EQ(decide(line, &older, true, true), Decision::DOWNLOAD_UPDATE);
   EXPECT_EQ(decide(line, &noHash, true, true), Decision::UP_TO_DATE);  // never refetch without a recorded hash
