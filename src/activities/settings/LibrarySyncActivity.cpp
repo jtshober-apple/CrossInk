@@ -34,6 +34,32 @@ enum Row : int {
 
 constexpr uint8_t BATTERY_STEPS[] = {20, 30, 40, 50, 60};
 
+// Menu row geometry, shared by the renderer and the touch hit-test so a tap always lands on the row that is drawn.
+struct MenuGeometry {
+  int left, width, rowH, top, step;
+};
+MenuGeometry menuGeometry(const GfxRenderer& renderer) {
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  MenuGeometry g{};
+  g.left = metrics.contentSidePadding;
+  g.width = renderer.getScreenWidth() - g.left * 2;
+  g.rowH = renderer.getLineHeight(UI_10_FONT_ID) * 2 + 14;
+  g.top = metrics.topPadding + metrics.headerHeight + 10;
+  g.step = g.rowH + 4;
+  return g;
+}
+
+// On-screen Cancel button for touch boards (they draw no button hints).
+Rect cancelButtonRect(const GfxRenderer& renderer) {
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  const int w = renderer.getScreenWidth() - metrics.contentSidePadding * 2;
+  return Rect{metrics.contentSidePadding, renderer.getScreenHeight() - 110, w, 64};
+}
+
+bool inRect(const Rect& r, const int x, const int y) {
+  return x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height;
+}
+
 const char* scheduleLabel(const LibrarySync::Schedule schedule) {
   switch (schedule) {
     case LibrarySync::Schedule::MANUAL:
@@ -150,6 +176,10 @@ void LibrarySyncActivity::loop() {
     case State::DONE:
       if (mappedInput.wasPressed(MIB::Back) || mappedInput.wasPressed(MIB::Confirm)) {
         exitViaBack();
+      } else if (mappedInput.hasTouch()) {
+        int tx = 0;
+        int ty = 0;
+        if (mappedInput.wasScreenTapped(tx, ty) || mappedInput.wasBackGesture()) exitViaBack();
       }
       break;
   }
@@ -164,6 +194,23 @@ void LibrarySyncActivity::loopMenu() {
   if (mappedInput.wasReleased(MIB::Confirm)) {
     activateRow();
     return;
+  }
+  if (mappedInput.hasTouch()) {
+    if (mappedInput.wasBackGesture()) {
+      exitViaBack();
+      return;
+    }
+    const auto g = menuGeometry(renderer);
+    int row = 0;
+    const auto touch = mappedInput.rowTouch(row, g.top, g.step, ROW_COUNT, 0, INT32_MAX, g.rowH);
+    if (touch == MappedInputManager::RowTouch::Down && row != selected_) {
+      selected_ = row;
+      requestUpdate();
+    } else if (touch == MappedInputManager::RowTouch::Tap) {
+      selected_ = row;
+      activateRow();
+      return;
+    }
   }
   buttonNavigator_.onNext([this] {
     selected_ = ButtonNavigator::nextIndex(selected_, ROW_COUNT);
@@ -221,6 +268,14 @@ void LibrarySyncActivity::runSync() {
         mappedInput.wasPressed(MappedInputManager::Button::Back) ||
         mappedInput.wasReleased(MappedInputManager::Button::Back)) {
       cancelRequested_ = true;
+    }
+    if (mappedInput.hasTouch()) {
+      int tx = 0;
+      int ty = 0;
+      if (mappedInput.wasBackGesture() ||
+          (mappedInput.wasScreenTapped(tx, ty) && inRect(cancelButtonRect(renderer), tx, ty))) {
+        cancelRequested_ = true;
+      }
     }
     return cancelRequested_;
   };
@@ -284,13 +339,12 @@ void LibrarySyncActivity::render(RenderLock&&) {
 }
 
 void LibrarySyncActivity::renderMenu() const {
-  const auto& metrics = UITheme::getInstance().getMetrics();
-  const int pageWidth = renderer.getScreenWidth();
-  const int left = metrics.contentSidePadding;
-  const int width = pageWidth - left * 2;
+  const auto g = menuGeometry(renderer);
+  const int left = g.left;
+  const int width = g.width;
   const int lineH = renderer.getLineHeight(UI_10_FONT_ID);
-  const int rowH = lineH * 2 + 14;
-  int y = metrics.topPadding + metrics.headerHeight + 10;
+  const int rowH = g.rowH;
+  int y = g.top;
 
   const auto& cfg = LibrarySync::config();
   const auto server = LibrarySync::selectedServer();
@@ -325,7 +379,7 @@ void LibrarySyncActivity::renderMenu() const {
     if (sel) renderer.fillRect(left - 6, y, width + 12, rowH, true);
     renderer.drawText(UI_10_FONT_ID, left, y + 5, rows[i].label, !sel, EpdFontFamily::BOLD);
     renderer.drawText(SMALL_FONT_ID, left, y + 5 + lineH + 2, rows[i].value.c_str(), !sel);
-    y += rowH + 4;
+    y += g.step;
   }
 
   const auto labels = mappedInput.mapLabels(tr(STR_BACK), "Change", "Up", "Down");
@@ -367,6 +421,12 @@ void LibrarySyncActivity::renderRunning() const {
     }
   }
 
+  if (mappedInput.hasTouch()) {
+    const Rect b = cancelButtonRect(renderer);
+    renderer.drawRect(b.x, b.y, b.width, b.height, 2, true);
+    renderer.drawCenteredText(UI_10_FONT_ID, b.y + (b.height - renderer.getLineHeight(UI_10_FONT_ID)) / 2,
+                              "Tap to cancel", true, EpdFontFamily::BOLD);
+  }
   const auto labels = mappedInput.mapLabels("Cancel", "", "", "");
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 }
@@ -395,6 +455,9 @@ void LibrarySyncActivity::renderDone() const {
                                      UITheme::TextVerticalAlignment::TOP);
   }
 
+  if (mappedInput.hasTouch()) {
+    renderer.drawCenteredText(SMALL_FONT_ID, pageHeight - 90, "Tap anywhere to close", true, EpdFontFamily::REGULAR);
+  }
   const auto labels = mappedInput.mapLabels(tr(STR_BACK), "", "", "");
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 }

@@ -75,7 +75,17 @@ void TesseraeActivity::onExit() { Activity::onExit(); }
 void TesseraeActivity::loop() {
   using MIB = MappedInputManager::Button;
 
-  const bool backPressed = mappedInput.wasPressed(MIB::Back);
+  // Touch boards: a left-edge swipe is Back and a tap anywhere is Confirm (retry / continue), like the stock screens.
+  bool touchTap = false;
+  bool touchBack = false;
+  if (mappedInput.hasTouch()) {
+    int tx = 0;
+    int ty = 0;
+    touchTap = mappedInput.wasScreenTapped(tx, ty);
+    touchBack = mappedInput.wasBackGesture();
+  }
+  const bool backPressed = mappedInput.wasPressed(MIB::Back) || touchBack;
+  const bool confirmPressed = mappedInput.wasPressed(MIB::Confirm) || touchTap;
 
   switch (state_) {
     case State::WIFI_SELECTION:
@@ -98,7 +108,7 @@ void TesseraeActivity::loop() {
         return;
       }
       // Retry button (front/OK on button devices).
-      if (mappedInput.wasPressed(MIB::Confirm)) {
+      if (confirmPressed) {
         setState(State::DISCOVERING);
         return;
       }
@@ -118,7 +128,7 @@ void TesseraeActivity::loop() {
 
     case State::DONE:
       // Any press finishes the activity.
-      if (backPressed || mappedInput.wasPressed(MIB::Confirm)) {
+      if (backPressed || confirmPressed) {
         finish();
       }
       break;
@@ -129,7 +139,7 @@ void TesseraeActivity::loop() {
         return;
       }
       // Retry.
-      if (mappedInput.wasPressed(MIB::Confirm)) {
+      if (confirmPressed) {
         if (SETTINGS.tessDeviceToken[0] != '\0') {
           setState(State::FETCHING_FRAME);
         } else {
@@ -295,6 +305,11 @@ void TesseraeActivity::renderStatus(const char* heading, const char* body, bool 
                                      UITheme::TextVerticalAlignment::TOP);
   }
 
+  if (mappedInput.hasTouch() && (showBack || showRetry)) {
+    const char* hint = showRetry ? "Tap to retry  |  swipe in from the left edge to go back"
+                                 : "Tap to continue  |  swipe in from the left edge to go back";
+    renderer.drawCenteredText(SMALL_FONT_ID, pageHeight - 90, hint, true, EpdFontFamily::REGULAR);
+  }
   // Touch devices get Back from the header; button devices need hints.
   const auto labels =
       mappedInput.mapLabels(showBack ? tr(STR_BACK) : "", showRetry ? tr(STR_TESSERAE_SYNC_NOW) : "", "", "");
