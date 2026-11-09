@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <Bitmap.h>
 #include <HalClock.h>
 #include <HalGPIO.h>
 #include <HalPowerManager.h>
@@ -17,6 +18,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <optional>
 #include <string>
 
@@ -382,6 +384,63 @@ TesseraeClient::Error TesseraeClient::fetchFrame() {
   return OK;
 }
 
+// ── frame orientation ─────────────────────────────────────────────────────────
+
+namespace {
+constexpr int MARKER_CELLS = 5;
+constexpr int MARKER_CELL_PX = 4;
+constexpr int MARKER_DARK_MAX =
+    110;  // luminance of a dark cell (0..255); 4-level gray puts black at 0, dark gray at 85
+constexpr int MARKER_LIGHT_MIN = 145;  // luminance of a light cell
+// Set after one landscape/portrait mismatch recheck so a server that never draws landscape cannot cause a recheck on
+// every wake; cleared as soon as the frame matches the charging state again.
+RTC_DATA_ATTR uint8_t orientationRetried = 0;
+}  // namespace
+
+TesseraeClient::FrameOrientation TesseraeClient::cachedFrameOrientation() {
+  HalFile file;
+  if (!Storage.openFileForRead("TESS", TESSERAE_CACHE_PATH, file)) return FrameOrientation::PORTRAIT;
+  FrameOrientation result = FrameOrientation::PORTRAIT;
+  Bitmap bitmap(file);
+  if (bitmap.parseHeaders() == BmpReaderError::Ok && bitmap.getWidth() >= MARKER_CELLS * MARKER_CELL_PX &&
+      bitmap.getHeight() >= MARKER_CELL_PX) {
+    std::unique_ptr<uint8_t[]> gray(new (std::nothrow) uint8_t[bitmap.getWidth()]);
+    std::unique_ptr<uint8_t[]> row(new (std::nothrow) uint8_t[bitmap.getRowBytes()]);
+    if (gray && row) {
+      // Two middle rows of the 4 px tall cells, two middle pixels of each cell: edge pixels may carry dither noise.
+      int sum[MARKER_CELLS] = {};
+      bool ok = true;
+      for (int y = 1; y <= 2 && ok; ++y) {
+        ok = bitmap.readRowGray(y, gray.get(), row.get()) == BmpReaderError::Ok;
+        if (!ok) break;
+        for (int c = 0; c < MARKER_CELLS; ++c) sum[c] += gray[c * MARKER_CELL_PX + 1] + gray[c * MARKER_CELL_PX + 2];
+      }
+      if (ok) {
+        int code = 0;
+        for (int c = 0; c < MARKER_CELLS && ok; ++c) {
+          const int avg = sum[c] / 4;
+          if (avg <= MARKER_DARK_MAX) {
+            code = (code << 1) | 1;
+          } else if (avg >= MARKER_LIGHT_MIN) {
+            code = code << 1;
+          } else {
+            ok = false;
+          }
+        }
+        if (ok && code == 0b10101) result = FrameOrientation::LANDSCAPE_CW;
+        if (ok && code == 0b01010) result = FrameOrientation::LANDSCAPE_CCW;
+      }
+    }
+  }
+  file.close();
+  return result;
+}
+
+TesseraeClient::FrameOrientation TesseraeClient::wantedOrientation() {
+  if (!SETTINGS.tessChargingLandscape || !gpio.isUsbConnected()) return FrameOrientation::PORTRAIT;
+  return SETTINGS.tessLandscapeDir == 0 ? FrameOrientation::LANDSCAPE_CW : FrameOrientation::LANDSCAPE_CCW;
+}
+
 // ── sendHeartbeat ─────────────────────────────────────────────────────────────
 
 namespace {
@@ -618,6 +677,21 @@ TesseraeClient::Error TesseraeClient::refreshBeforeSleep(const bool timedWake) {
       if (err == OK || err == FRAME_UNCHANGED) {
         uint16_t nextPollSeconds = 0;
         sendHeartbeat(&nextPollSeconds);
+        // The server draws the dashboard for the charging state it last heard about. When the frame we now hold is
+        // the other orientation (just docked or just unplugged), look again once shortly: the heartbeat above has
+        // told it, and it redraws within a minute. Only once per mismatch, so a server that never draws landscape
+        // costs nothing extra.
+        if (timedWake) {
+          if (cachedFrameOrientation() != wantedOrientation()) {
+            if (!orientationRetried) {
+              orientationRetried = 1;
+              quickRecheck = true;
+              LOG_INF(TAG, "refresh: frame orientation differs from the charging state, rechecking soon");
+            }
+          } else {
+            orientationRetried = 0;
+          }
+        }
       }
     }
   }

@@ -698,7 +698,19 @@ constexpr int kTesseraeHeaderCenterFromTop = 21;        // vertical centre of th
 constexpr int kTesseraePillPadX = 4;
 constexpr int kTesseraePillPadY = 1;
 
-void drawNotSyncedPill(const GfxRenderer& renderer) {
+// Which way the dashboard frame about to be drawn is turned (landscape dashboard while docked): the pill is placed in
+// the upright landscape view, so it is drawn with the matching logical orientation and then put back.
+TesseraeClient::FrameOrientation tesseraeFrameOrientation = TesseraeClient::FrameOrientation::PORTRAIT;
+
+void drawNotSyncedPill(GfxRenderer& renderer) {
+  const auto savedOrientation = renderer.getOrientation();
+  // Landscape layouts keep the portrait status line's spot: top right, same insets, measured in the upright view.
+  // (Panel memory is landscape-native: "counter-clockwise" is the native orientation, "clockwise" the 180 degree one.)
+  if (tesseraeFrameOrientation == TesseraeClient::FrameOrientation::LANDSCAPE_CCW) {
+    renderer.setOrientation(GfxRenderer::Orientation::LandscapeCounterClockwise);
+  } else if (tesseraeFrameOrientation == TesseraeClient::FrameOrientation::LANDSCAPE_CW) {
+    renderer.setOrientation(GfxRenderer::Orientation::LandscapeClockwise);
+  }
   const int fontId = SMALL_FONT_ID;
   const char* label = "NOT SYNCED";
   const int textW = renderer.getTextWidth(fontId, label);
@@ -710,6 +722,7 @@ void drawNotSyncedPill(const GfxRenderer& renderer) {
   // Filled black rectangle with white text.
   renderer.fillRect(badgeX, badgeY, badgeW, badgeH, true);
   renderer.drawText(fontId, badgeX + kTesseraePillPadX, badgeY + kTesseraePillPadY, label, false);
+  renderer.setOrientation(savedOrientation);
 }
 
 // Rounded stroke digits for the power-off clock. A "1" is a single bar, so its cell is narrow and the clock stays
@@ -1325,9 +1338,15 @@ void SleepActivity::renderTesseraeSleepScreen() const {
   // timed-wake path itself (and an unpaired device, which has no wake timer) refreshes inline.
   const bool deferNetwork = !TesseraeClient::isTimedWake() && SETTINGS.tessDeviceToken[0] != '\0' &&
                             SETTINGS.tessAutoRefreshMin != 0 && SETTINGS.tessServerUrl[0] != '\0';
+  // Docked (USB power, landscape dashboard on): the cached landscape frame is at most one charging interval old, so
+  // draw it at once instead of the portrait stand-in (which would show sideways); the short timed wake refreshes it.
+  const auto wantedOrientation = TesseraeClient::wantedOrientation();
+  const bool dockedFrameReady = deferNetwork && wantedOrientation != TesseraeClient::FrameOrientation::PORTRAIT &&
+                                TesseraeClient::cachedFrameOrientation() == wantedOrientation;
   if (deferNetwork) {
     TesseraeClient::deferRefresh();
-    return renderPowerOffScreen();
+    if (!dockedFrameReady) return renderPowerOffScreen();
+    renderer.setOrientation(GfxRenderer::Orientation::Portrait);  // the frame is always drawn as a portrait buffer
   }
 
   // An inline refresh (unpaired / no wake timer) takes seconds: say so. A timed wake has nobody watching.
@@ -1339,9 +1358,10 @@ void SleepActivity::renderTesseraeSleepScreen() const {
 
   // Pull the freshest dashboard before drawing (a no-op after a timed wake already did); on failure the cached
   // frame below is used.
-  TesseraeClient::refreshBeforeSleep();
+  if (!dockedFrameReady) TesseraeClient::refreshBeforeSleep();
   if (TesseraeClient::frameIsStale()) TesseraeClient::markStaleDrawn();
   tesseraePill = TesseraeClient::syncPillWanted();
+  tesseraeFrameOrientation = TesseraeClient::cachedFrameOrientation();
 
   HalFile file;
   if (Storage.openFileForRead("SLP", TesseraeClient::TESSERAE_CACHE_PATH, file)) {
@@ -1353,6 +1373,7 @@ void SleepActivity::renderTesseraeSleepScreen() const {
       TesseraeClient::setScreenState(tesseraePill ? TesseraeClient::ScreenState::DASHBOARD_WITH_PILL
                                                   : TesseraeClient::ScreenState::DASHBOARD);
       tesseraePill = false;
+      tesseraeFrameOrientation = TesseraeClient::FrameOrientation::PORTRAIT;
       return;
     }
     LOG_ERR("SLP", "Tesserae BMP parse failed: %s", Bitmap::errorToString(parseErr));

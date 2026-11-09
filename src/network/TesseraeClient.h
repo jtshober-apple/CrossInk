@@ -57,6 +57,18 @@ class TesseraeClient {
   /** True when the NOT SYNCED pill applies now: a failed refresh left things stale, or the open book is unsynced. */
   static bool syncPillWanted();
 
+  /**
+   * How the cached dashboard frame is laid out. A docked (USB-powered) reader gets a landscape dashboard from the
+   * server, rotated into the normal 480x800 frame so it is drawn like any other frame; the frame says which way it
+   * is rotated with a marker in its top-left corner (five 4x4 px cells, dark/light/dark/light/dark = turned
+   * clockwise, light/dark/light/dark/light = turned counter-clockwise, anything else = portrait).
+   */
+  enum class FrameOrientation : uint8_t { PORTRAIT = 0, LANDSCAPE_CW = 1, LANDSCAPE_CCW = 2 };
+  /** Orientation marker read from the cached frame (PORTRAIT when there is none). */
+  static FrameOrientation cachedFrameOrientation();
+  /** Landscape (in the configured direction) while on USB power with the setting on, else PORTRAIT. */
+  static FrameOrientation wantedOrientation();
+
   /** Blocking join of the saved Wi-Fi network (10 s timeout). Pair with leaveWifi(). */
   static bool joinSavedWifi();
   static void leaveWifi();
