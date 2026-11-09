@@ -483,14 +483,19 @@ static uint32_t tesseraeTimedWakeSeconds() {
   if (SETTINGS.tessAutoRefreshMin == 0 || SETTINGS.tessServerUrl[0] == '\0' || SETTINGS.tessDeviceToken[0] == '\0') {
     return 0;
   }
-  if (powerManager.getBatteryPercentage() < 15) return 0;
+  const bool charging = gpio.isUsbConnected();
+  if (!charging && powerManager.getBatteryPercentage() < 15) return 0;
   const uint32_t retry = TesseraeClient::retryAfterFailureSeconds();
   if (retry != 0) return retry;
   const uint32_t deferred = TesseraeClient::takeDeferredRefreshSeconds();  // power-off: first check after ~15 s
   if (deferred != 0) return deferred;
   const uint32_t recheck = TesseraeClient::takeQuickRecheckSeconds();
   if (recheck != 0) return recheck;
-  return static_cast<uint32_t>(SETTINGS.tessAutoRefreshMin) * 60u;
+  // On USB power the battery is not a concern: look at least every 10 minutes so the dashboard stays current.
+  constexpr uint32_t kChargingRefreshSeconds = 10 * 60;
+  const uint32_t normal = static_cast<uint32_t>(SETTINGS.tessAutoRefreshMin) * 60u;
+  if (charging && SETTINGS.tessChargingRefresh && normal > kChargingRefreshSeconds) return kChargingRefreshSeconds;
+  return normal;
 }
 
 // Enter deep sleep mode

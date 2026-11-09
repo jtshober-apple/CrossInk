@@ -433,6 +433,12 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   char tessEtag[64] = "";
   // Minutes between background wakes that refresh the Tesserae sleep screen (0 = only when going to sleep).
   uint8_t tessAutoRefreshMin = 30;
+  // While on USB power: refresh at least every 10 minutes (the battery is not a concern), 1 = on.
+  uint8_t tessChargingRefresh = 1;
+  // While on USB power: ask the server for its landscape dashboard (rotated into the portrait frame), 1 = on.
+  uint8_t tessChargingLandscape = 1;
+  // Which way the docked reader is turned for the landscape dashboard: 0 = clockwise, 1 = counter-clockwise.
+  uint8_t tessLandscapeDir = 0;
   // Bluetooth page turner, saved under the keys lib/BlePageTurner reads and writes (BlePageTurnerJson.h).
   bleturner::Config ble;
   // Quick Resume: keep current content visible with moon icon instead of showing a static sleep screen.

@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <HalClock.h>
+#include <HalGPIO.h>
 #include <HalPowerManager.h>
 #include <HalStorage.h>
 #include <I18n.h>
@@ -414,6 +415,8 @@ TesseraeClient::Error TesseraeClient::sendHeartbeat(uint16_t* nextPollSeconds) {
   JsonDocument bodyDoc;
   bodyDoc["rssi"] = WiFi.RSSI();
   bodyDoc["battery_pct"] = powerManager.getBatteryPercentage();
+  // USB power present: the dashboard server draws its landscape layout for a charging (docked) reader.
+  bodyDoc["charging"] = gpio.isUsbConnected() ? 1 : 0;
   // The open book, so the dashboard footer follows what is being read rather than guessing from server positions.
   {
     const std::string& openPath = APP_STATE.openEpubPath;

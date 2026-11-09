@@ -333,6 +333,13 @@ void forEachBaseSetting(SettingVisitor visit, void* context) {
                            StrId::STR_CAT_SYSTEM));
   emit(SettingInfo::Value(StrId::STR_TESSERAE_AUTO_REFRESH, &CrossPointSettings::tessAutoRefreshMin, {0, 240, 15},
                           "tessAutoRefreshMin", StrId::STR_CAT_SYSTEM));
+  emit(SettingInfo::Toggle(StrId::STR_TESSERAE_CHARGING_REFRESH, &CrossPointSettings::tessChargingRefresh,
+                           "tessChargingRefresh", StrId::STR_CAT_SYSTEM));
+  emit(SettingInfo::Toggle(StrId::STR_TESSERAE_CHARGING_LANDSCAPE, &CrossPointSettings::tessChargingLandscape,
+                           "tessChargingLandscape", StrId::STR_CAT_SYSTEM));
+  emit(SettingInfo::Enum(StrId::STR_TESSERAE_LANDSCAPE_DIR, &CrossPointSettings::tessLandscapeDir,
+                         {StrId::STR_TESSERAE_ROT_CW, StrId::STR_TESSERAE_ROT_CCW}, "tessLandscapeDir",
+                         StrId::STR_CAT_SYSTEM));
   // Pairing state is managed by TesseraeActivity; stored with the settings but never shown in a list.
   emit(SettingInfo::String(StrId::STR_TESSERAE_DEVICE_ID, &SETTINGS.tessDeviceId[0], sizeof(SETTINGS.tessDeviceId),
                            "tessDeviceId")
