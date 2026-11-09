@@ -34,6 +34,7 @@ enum class SettingAction {
   About,
   TesseraeSync,
   LibrarySync,
+  FileBrowser,
 };
 
 struct SettingInfo {

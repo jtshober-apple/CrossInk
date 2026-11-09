@@ -125,6 +125,9 @@ void SettingsActivity::rebuildSettings() {
     settings.push_back(std::move(setting));
   }
 
+  // File Browser lives here now (it left the Home screen).
+  addAction(SettingsSection::General, StrId::STR_BROWSE_FILES, SettingAction::FileBrowser);
+
   // Clock configuration only exists where the RTC probe found hardware.
   if (halClock.isAvailable()) {
     addAction(SettingsSection::General, StrId::STR_CLOCK, SettingAction::ClockSettings);
@@ -315,6 +318,9 @@ void SettingsActivity::toggleSelectedSetting() {
         break;
       case SettingAction::TesseraeSync:
         startActivityForResult(std::make_unique<TesseraeActivity>(renderer, mappedInput), resultHandler);
+        break;
+      case SettingAction::FileBrowser:
+        activityManager.goToFileBrowser();
         break;
       case SettingAction::LibrarySync:
         startActivityForResult(std::make_unique<LibrarySyncActivity>(renderer, mappedInput), resultHandler);
