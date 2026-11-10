@@ -37,4 +37,14 @@ inline constexpr const char* KEYS[] = {"homeButtonTapAction", "homeButtonDoubleT
 inline bool isSetting(uint8_t CrossPointSettings::* field) {
   return field == FIELDS[0] || field == FIELDS[1] || field == FIELDS[2] || field == FIELDS[3];
 }
+
+// X4 Pro power button: the same action list, four gestures.
+inline constexpr unsigned POWER_GESTURE_TOTAL = 4;
+inline constexpr StrId POWER_GESTURE_LABELS[] = {StrId::STR_POWER_TAP, StrId::STR_POWER_DOUBLE_CLICK,
+                                                 StrId::STR_POWER_TRIPLE_CLICK, StrId::STR_POWER_LONG_PRESS};
+inline constexpr uint8_t CrossPointSettings::* POWER_FIELDS[] = {
+    &CrossPointSettings::powerTapAction, &CrossPointSettings::powerDoubleAction, &CrossPointSettings::powerTripleAction,
+    &CrossPointSettings::powerLongAction};
+inline constexpr const char* POWER_KEYS[] = {"powerTapAction", "powerDoubleAction", "powerTripleAction",
+                                             "powerLongAction"};
 }  // namespace home_button

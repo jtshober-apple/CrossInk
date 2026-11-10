@@ -51,6 +51,8 @@ class MappedInputManager {
   // expires. The main loop supplies that one-frame event here.
   void setPowerConfirmClickFrame(const bool clicked) { powerConfirmClickFrame = clicked; }
 #endif
+  // X4 Pro power button gestures need to know the press that woke the device is over (main.cpp decides).
+  void setPowerGesturesReady(const bool ready) { powerGesturesReady = ready; }
   bool injectRemoteClick(RemoteButton button);
   bool hasRemoteClick() const { return remoteInput.button != RemoteButton::None; }
   bool wasPressed(Button button) const;
@@ -155,6 +157,9 @@ class MappedInputManager {
 
   mutable RemoteButtonInput remoteInput;
   mutable HomeButtonInput homeButtonInput;
+  mutable HomeButtonInput powerButtonInput;
+  mutable bool powerLongFired = false;
+  bool powerGesturesReady = false;
   mutable HomeButtonAction homeAction = HomeButtonAction::Ignore;
   mutable HomeButtonAction deferredHomeAction = HomeButtonAction::Ignore;
   mutable bool touchHeldOverrideValid = false;

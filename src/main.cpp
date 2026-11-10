@@ -975,6 +975,13 @@ void loop() {
   static unsigned long lastMemPrint = 0;
 
   gpio.setSharedConfirmPowerShortPressEmitsPower(SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP);
+  {
+    // Power gestures count only once the press that woke the device has been let go and the wake grace period is over.
+    static bool powerWasReleasedSinceWake = false;
+    if (!gpio.isPressed(HalGPIO::BTN_POWER)) powerWasReleasedSinceWake = true;
+    mappedInputManager.setPowerGesturesReady(powerWasReleasedSinceWake && millis() >= allowSleepAt &&
+                                             !wakePowerReleasePending);
+  }
   mappedInputManager.update();
 
   // Bluetooth page turner, before the USB drive's early return: a card handed to USB stops the radio
@@ -1206,7 +1213,10 @@ void loop() {
                                         SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP &&
                                         gpio.getPowerButtonHeldTime() <= X4PRO_POWER_CLICK_MAX_HOLD_MS;
 
-  if (!x4ProAwaitingClickWindow && powerReleasedSinceWake && millis() >= allowSleepAt &&
+  // X4 Pro: the long press does what you assigned; only Sleep keeps this hold-to-sleep.
+  const bool longPressIsSleep =
+      !BoardConfig::isX4Pro() || SETTINGS.powerLongAction == static_cast<uint8_t>(HomeButtonAction::Sleep);
+  if (longPressIsSleep && !x4ProAwaitingClickWindow && powerReleasedSinceWake && millis() >= allowSleepAt &&
       gpio.isPressed(HalGPIO::BTN_POWER) && gpio.getPowerButtonHeldTime() > SETTINGS.getPowerButtonDuration()) {
     // If the screenshot combination is potentially being pressed, don't sleep
     if (gpio.isPressed(HalGPIO::BTN_DOWN)) {

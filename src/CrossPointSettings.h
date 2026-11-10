@@ -306,6 +306,12 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t homeButtonDoubleTapAction = static_cast<uint8_t>(HomeButtonAction::ToggleFrontlight);
   uint8_t homeButtonLongPressAction = static_cast<uint8_t>(HomeButtonAction::ReaderMenu);
   uint8_t homeButtonTripleTapAction = static_cast<uint8_t>(HomeButtonAction::Ignore);
+  // X4 Pro power button gestures (HomeButtonAction values). Tap defaults to what "Short Power Button" was; Double to
+  // the old "Double-Click Power for Light"; Long to Sleep (the long hold that always put the device to sleep).
+  uint8_t powerTapAction = static_cast<uint8_t>(HomeButtonAction::Ignore);
+  uint8_t powerDoubleAction = static_cast<uint8_t>(HomeButtonAction::ToggleFrontlight);
+  uint8_t powerTripleAction = static_cast<uint8_t>(HomeButtonAction::Ignore);
+  uint8_t powerLongAction = static_cast<uint8_t>(HomeButtonAction::Sleep);
   // EPUB reading orientation settings
   // 0 = portrait (default), 1 = landscape clockwise, 2 = inverted, 3 = landscape counter-clockwise
   uint8_t orientation = PORTRAIT;

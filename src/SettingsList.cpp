@@ -177,11 +177,16 @@ void forEachBaseSetting(SettingVisitor visit, void* context) {
                           StrId::STR_LONG_PRESS_BEHAVIOR_ORIENTATION},
                          "longPressButtonBehavior", StrId::STR_CAT_CONTROLS));
   emit(buildLongPressMenuSetting());
-  // Double-click power frontlight shortcut only exists on the X4 Pro.
-  if (BoardConfig::isX4Pro())
-    emit(SettingInfo::Toggle(StrId::STR_DBL_CLICK_PWR_LIGHT, &CrossPointSettings::doubleClickPwrLight,
-                             "doubleClickPwrLight", StrId::STR_CAT_CONTROLS));
-  emit(buildShortPowerButtonSetting());
+  // X4 Pro: every power-button gesture is assignable (replaces "Short Power Button" and "Double-Click Power for
+  // Light").
+  if (BoardConfig::isX4Pro()) {
+    for (unsigned i = 0; i < home_button::POWER_GESTURE_TOTAL; ++i) {
+      emit(SettingInfo::StaticEnum(home_button::POWER_GESTURE_LABELS[i], home_button::POWER_FIELDS[i],
+                                   home_button::ACTION_LABELS, home_button::POWER_KEYS[i], StrId::STR_CAT_CONTROLS));
+    }
+  } else {
+    emit(buildShortPowerButtonSetting());
+  }
   {
     const std::vector<StrId> chordActions = {StrId::STR_NONE_OPT,       StrId::STR_SLEEP,
                                              StrId::STR_CHORD_HOME,     StrId::STR_LIBRARY,

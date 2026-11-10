@@ -260,6 +260,26 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
   longPressMenuFunction = clamp(doc["longPressMenuFunction"] | (uint8_t)LP_MENU_DISABLED,
                                 (uint8_t)LONG_PRESS_MENU_FUNCTION_COUNT, (uint8_t)LP_MENU_DISABLED);
   shortPwrBtn = clamp(doc["shortPwrBtn"] | (uint8_t)IGNORE, (uint8_t)SHORT_PWRBTN_COUNT, (uint8_t)IGNORE);
+  if (BoardConfig::isX4Pro()) {
+    // The power button's gestures now live in the four power* settings. First load after the change: carry over what
+    // the old "Short Power Button" and "Double-Click Power for Light" settings did, then neutralise those two for good
+    // so the old power-button code paths stay out of the way.
+    if (doc["powerTapAction"].isNull()) {
+      static constexpr HomeButtonAction FROM_SHORT[] = {HomeButtonAction::Ignore,         HomeButtonAction::Sleep,
+                                                        HomeButtonAction::NextPage,       HomeButtonAction::Refresh,
+                                                        HomeButtonAction::Footnotes,      HomeButtonAction::Confirm,
+                                                        HomeButtonAction::CreateClipping, HomeButtonAction::Bookmark,
+                                                        HomeButtonAction::Sync,           HomeButtonAction::ReaderMenu};
+      s.powerTapAction =
+          static_cast<uint8_t>(shortPwrBtn < sizeof(FROM_SHORT) / sizeof(FROM_SHORT[0]) ? FROM_SHORT[shortPwrBtn]
+                                                                                        : HomeButtonAction::Ignore);
+      s.powerDoubleAction = static_cast<uint8_t>((doc["doubleClickPwrLight"] | 1) ? HomeButtonAction::ToggleFrontlight
+                                                                                  : HomeButtonAction::Ignore);
+      needsResave = true;
+    }
+    shortPwrBtn = IGNORE;
+    doubleClickPwrLight = 0;
+  }
   if (BoardConfig::hasHomeKey() && doc["homeButtonLongPressAction"].isNull() &&
       !doc["longPressMenuFunction"].isNull()) {
     static constexpr HomeButtonAction LEGACY[] = {HomeButtonAction::Sync,       HomeButtonAction::Ignore,

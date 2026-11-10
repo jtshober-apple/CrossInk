@@ -34,6 +34,25 @@ void MappedInputManager::update(const bool deferHomeButtonAction) const {
       HalHaptics::feedback(SETTINGS.vibration != CrossPointSettings::VIBRATION_OFF, true, SETTINGS.hapticIntensity);
     }
   }
+  // X4 Pro power button: single / double / triple press and long press, each assignable (same action list as the Home
+  // key). The long press Sleep stays with the legacy hold-to-sleep in main.cpp, so it only fires here for other
+  // actions.
+  if (BoardConfig::isX4Pro() && powerGesturesReady) {
+    const bool powerDown = gpio.isPressed(HalGPIO::BTN_POWER);
+    const unsigned long heldMs = gpio.getPowerButtonHeldTime();
+    if (!powerDown) powerLongFired = false;
+    const auto longAction = static_cast<HomeButtonAction>(SETTINGS.powerLongAction);
+    const bool comboWithDown = gpio.isPressed(HalGPIO::BTN_DOWN);  // Power + Down is the screenshot combination
+    const bool tapped = !comboWithDown && !powerLongFired && gpio.wasReleased(HalGPIO::BTN_POWER) && heldMs <= 300;
+    const bool longNow = !comboWithDown && powerDown && !powerLongFired && longAction != HomeButtonAction::Sleep &&
+                         longAction != HomeButtonAction::Ignore && heldMs > 600;
+    if (longNow) powerLongFired = true;
+    const HomeButtonAction act = powerButtonInput.update(
+        millis(), tapped, longNow, false, powerDown, static_cast<HomeButtonAction>(SETTINGS.powerTapAction),
+        static_cast<HomeButtonAction>(SETTINGS.powerDoubleAction),
+        static_cast<HomeButtonAction>(SETTINGS.powerTripleAction), longAction);
+    if (act != HomeButtonAction::Ignore && homeAction == HomeButtonAction::Ignore) homeAction = act;
+  }
   // Touch boards without a home key: a short power click can carry a reader
   // shortcut (see SHORT_PWRBTN).
   if (homeAction == HomeButtonAction::Ignore && mapButton(Button::Power, &HalGPIO::wasReleased)) {
