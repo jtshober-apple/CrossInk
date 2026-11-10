@@ -188,6 +188,8 @@ class LibraryListActivity final : public UiTabListActivity {
   uint8_t overlapCount = 0;
 
   bool lockNextConfirmRelease = false;
+  // True while onEnter restores the saved sort, so that does not count as a change to remember.
+  bool restoringSort = false;
   bool lockNextBackRelease = false;
 
   // Row options modal (Recent long-press menu); owned here so it outlives the

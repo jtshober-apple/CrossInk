@@ -113,6 +113,22 @@ void LibraryListActivity::onEnter() {
   }
   resolvePinned();
 
+  // Open in the saved sort (Settings -> Default Library Sort, also remembered whenever it is changed here).
+  {
+    const int saved = std::min<int>(SETTINGS.librarySort, 2 * TAB_SLOTS - 1);
+    const int tab = saved / 2;
+    const bool firstDescending = tab == RECENT_TAB;  // Recent opens newest first; Title and Author open A to Z
+    const bool descending = (saved % 2 == 0) == firstDescending;
+    descendingTabs = static_cast<uint8_t>(1u << RECENT_TAB);
+    if (descending)
+      descendingTabs |= static_cast<uint8_t>(1u << tab);
+    else
+      descendingTabs &= static_cast<uint8_t>(~(1u << tab));
+    restoringSort = true;
+    selectTab(tab, false);
+    restoringSort = false;
+  }
+
   // Entered while Confirm was still held (typical when launched from the home
   // menu): ignore its release, or we would open whatever sits at row 0.
   lockNextConfirmRelease = mappedInput.isPressed(MappedInputManager::Button::Confirm);
@@ -487,6 +503,15 @@ void LibraryListActivity::selectTab(const int index, const bool toggleIfActive) 
   applyFilter();
   activeTabIndex = index;
   refreshOverlap();
+  if (!restoringSort) {  // remember the choice: it is the sort the Library opens in next time
+    const bool desc = (descendingTabs & (1u << index)) != 0;
+    const bool firstDescending = index == RECENT_TAB;
+    const uint8_t value = static_cast<uint8_t>(index * 2 + (desc == firstDescending ? 0 : 1));
+    if (SETTINGS.librarySort != value) {
+      SETTINGS.librarySort = value;
+      SETTINGS.saveToFile();
+    }
+  }
   // Tab changes happen only while the bar owns focus. A tab's remembered row
   // must not pull focus back into the list after the switch.
   auto& nav = activeNav();

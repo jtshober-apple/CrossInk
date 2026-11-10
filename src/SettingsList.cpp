@@ -216,6 +216,10 @@ void forEachBaseSetting(SettingVisitor visit, void* context) {
       "sleepTimeoutMinutes", StrId::STR_CAT_SYSTEM));
   emit(SettingInfo::Toggle(StrId::STR_SHOW_HIDDEN_FILES, &CrossPointSettings::showHiddenFiles, "showHiddenFiles",
                            StrId::STR_CAT_SYSTEM));
+  emit(SettingInfo::Enum(StrId::STR_LIBRARY_DEFAULT_SORT, &CrossPointSettings::librarySort,
+                         {StrId::STR_SORT_RECENT_NEW, StrId::STR_SORT_RECENT_OLD, StrId::STR_SORT_TITLE_AZ,
+                          StrId::STR_SORT_TITLE_ZA, StrId::STR_SORT_AUTHOR_AZ, StrId::STR_SORT_AUTHOR_ZA},
+                         "librarySort", StrId::STR_CAT_SYSTEM));
   emit(SettingInfo::Toggle(StrId::STR_LIBRARY_USE_METADATA, &CrossPointSettings::libraryUseMetadata,
                            "libraryUseMetadata", StrId::STR_CAT_SYSTEM));
   emit(SettingInfo::Toggle(StrId::STR_REMOVE_READ_FROM_RECENTS, &CrossPointSettings::removeReadBooksFromRecents,
