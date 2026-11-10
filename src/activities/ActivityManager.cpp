@@ -274,6 +274,11 @@ void ActivityManager::goToFileTransfer() {
   replaceActivity(std::make_unique<CrossPointWebServerActivity>(renderer, mappedInput));
 }
 
+void ActivityManager::goToHotspot() {
+  replaceActivity(std::make_unique<CrossPointWebServerActivity>(renderer, mappedInput, /*startInJoinNetwork=*/false,
+                                                                /*startInHotspot=*/true));
+}
+
 void ActivityManager::goToJoinNetwork() {
   // Post heap-defrag reboot: enter the web-server activity straight in Join
   // Network mode (skips mode selection, does not reboot again).

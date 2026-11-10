@@ -411,7 +411,7 @@ void forEachBaseSetting(SettingVisitor visit, void* context) {
   emit(SettingInfo::Toggle(StrId::STR_CLOCK_SYNCED, &CrossPointSettings::clockHasBeenSynced, "clockHasBeenSynced",
                            StrId::STR_CUSTOMISE_STATUS_BAR));
   if (BoardConfig::hasHomeKey()) {
-    for (unsigned i = 0; i < 3; ++i) {
+    for (unsigned i = 0; i < home_button::GESTURE_TOTAL; ++i) {
       emit(SettingInfo::StaticEnum(home_button::GESTURE_LABELS[i], home_button::FIELDS[i], home_button::ACTION_LABELS,
                                    home_button::KEYS[i], StrId::STR_CAT_CONTROLS));
     }

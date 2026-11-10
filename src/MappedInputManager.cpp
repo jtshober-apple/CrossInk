@@ -26,6 +26,7 @@ void MappedInputManager::update(const bool deferHomeButtonAction) const {
                                         wasSwipe() != SwipeDir::None, gpio.wasHomeKeyPressed(),
                                         static_cast<HomeButtonAction>(SETTINGS.homeButtonTapAction),
                                         static_cast<HomeButtonAction>(SETTINGS.homeButtonDoubleTapAction),
+                                        static_cast<HomeButtonAction>(SETTINGS.homeButtonTripleTapAction),
                                         static_cast<HomeButtonAction>(SETTINGS.homeButtonLongPressAction));
     if (gpio.wasHomeKeyLongPressed() && homeAction != HomeButtonAction::Ignore) {
       HalHaptics::longPress(SETTINGS.vibration != CrossPointSettings::VIBRATION_OFF, SETTINGS.hapticIntensity);

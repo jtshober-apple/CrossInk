@@ -305,6 +305,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t homeButtonTapAction = static_cast<uint8_t>(HomeButtonAction::Home);
   uint8_t homeButtonDoubleTapAction = static_cast<uint8_t>(HomeButtonAction::ToggleFrontlight);
   uint8_t homeButtonLongPressAction = static_cast<uint8_t>(HomeButtonAction::ReaderMenu);
+  uint8_t homeButtonTripleTapAction = static_cast<uint8_t>(HomeButtonAction::Ignore);
   // EPUB reading orientation settings
   // 0 = portrait (default), 1 = landscape clockwise, 2 = inverted, 3 = landscape counter-clockwise
   uint8_t orientation = PORTRAIT;

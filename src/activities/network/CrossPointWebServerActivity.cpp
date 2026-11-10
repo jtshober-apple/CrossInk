@@ -87,6 +87,11 @@ void CrossPointWebServerActivity::onEnter() {
   lastHandleClientTime = 0;
   requestUpdate();
 
+  if (startInHotspot) {
+    onNetworkModeSelected(NetworkMode::CREATE_HOTSPOT);
+    return;
+  }
+
   if (startInJoinNetwork) {
     // Came back from the heap-defrag reboot on a pristine heap: skip the mode
     // picker and go straight into Join Network (onNetworkModeSelected won't

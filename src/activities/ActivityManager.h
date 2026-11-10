@@ -85,6 +85,7 @@ class ActivityManager {
 
   // goTo... functions are convenient wrapper for replaceActivity()
   void goToFileTransfer();
+  void goToHotspot();      // File Transfer straight into Create Hotspot
   void goToJoinNetwork();  // File Transfer straight into Join Network (post heap-defrag reboot)
   void goToUsbDrive();
   // openSection jumps straight into one group (End = the section list).

@@ -44,6 +44,8 @@
 #include "WifiCredentialStore.h"
 #include "activities/Activity.h"
 #include "activities/ActivityManager.h"
+#include "activities/network/TesseraeActivity.h"
+#include "activities/settings/LibrarySyncActivity.h"
 #include "activities/settings/LibrarySyncNoticeActivity.h"
 #include "activities/settings/SdFirmwareUpdateActivity.h"
 #include "components/UITheme.h"
@@ -1227,6 +1229,37 @@ void loop() {
     return;
   }
 #endif
+
+  // Global actions assigned to a Home-key gesture (Settings -> Controls -> Home Button Gestures): they work on any
+  // screen.
+  switch (mappedInputManager.homeButtonAction()) {
+    case HomeButtonAction::Library:
+      activityManager.goToLibrary();
+      return;
+    case HomeButtonAction::Settings:
+      activityManager.goToSettings();
+      return;
+    case HomeButtonAction::Sleep:
+      enterDeepSleep();
+      return;
+    case HomeButtonAction::SyncLibrary:
+      activityManager.replaceActivity(std::make_unique<LibrarySyncActivity>(renderer, mappedInputManager, true));
+      return;
+    case HomeButtonAction::SyncDashboard:
+      activityManager.replaceActivity(std::make_unique<TesseraeActivity>(renderer, mappedInputManager));
+      return;
+    case HomeButtonAction::FileTransfer:
+      activityManager.goToFileTransfer();
+      return;
+    case HomeButtonAction::JoinNetwork:
+      activityManager.goToJoinNetwork();
+      return;
+    case HomeButtonAction::CreateHotspot:
+      activityManager.goToHotspot();
+      return;
+    default:
+      break;
+  }
 
   // Refresh screen when power button is short-pressed with FORCE_REFRESH setting.
   if (mappedInputManager.homeButtonAction() == HomeButtonAction::ToggleFrontlight) {

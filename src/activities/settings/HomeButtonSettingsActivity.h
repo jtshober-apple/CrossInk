@@ -10,7 +10,7 @@ class HomeButtonSettingsActivity final : public UiListActivity {
       : UiListActivity("HomeButtonSettings", renderer, input) {}
 
  private:
-  static constexpr int GESTURE_COUNT = 3;
+  static constexpr int GESTURE_COUNT = 4;
 
   freeink::ui::ListItem rows[GESTURE_COUNT]{};
   OptionPopup optionPopup;
